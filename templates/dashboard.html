@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelli-Credit | Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+
+<body>
+    <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-logo">IC</div>
+            <div>
+                <div class="brand-title">Intelli-Credit</div>
+                <div class="brand-subtitle">Credit Engine v1.0</div>
+            </div>
+        </div>
+
+        <!-- Active Application Info (shown when processing) -->
+        <div class="active-app-info" id="activeAppInfo" style="display:none;">
+            <div class="active-app-label">Active Application</div>
+            <div class="active-app-name" id="activeAppName">—</div>
+            <div class="active-app-id" id="activeAppId">—</div>
+            <div class="active-app-status" id="activeAppStatus">
+                <span class="status-dot processing"></span> Processing
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a class="nav-item active" data-section="dashboard" onclick="showSection('dashboard')">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">Dashboard</span>
+                <span class="nav-arrow">›</span>
+            </a>
+            <a class="nav-item" data-section="ingestion" onclick="showSection('ingestion')">
+                <span class="nav-icon">📁</span>
+                <span class="nav-label">Data Ingestion</span>
+                <span class="nav-badge" id="badgeIngestion" style="display:none;">0</span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="financial" data-layer="2"
+                onclick="showSection('financial')">
+                <span class="nav-icon">📈</span>
+                <span class="nav-label">Financial Analysis</span>
+                <span class="layer-status" id="layerStatus2"></span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="anomaly" data-layer="3"
+                onclick="showSection('anomaly')">
+                <span class="nav-icon">⚠️</span>
+                <span class="nav-label">Anomaly Detection</span>
+                <span class="layer-status" id="layerStatus3"></span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="research" data-layer="4"
+                onclick="showSection('research')">
+                <span class="nav-icon">🌐</span>
+                <span class="nav-label">Web Research</span>
+                <span class="layer-status" id="layerStatus4"></span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="scoring" data-layer="5"
+                onclick="showSection('scoring')">
+                <span class="nav-icon">🎯</span>
+                <span class="nav-label">Risk Scoring</span>
+                <span class="layer-status" id="layerStatus5"></span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="cam" data-layer="6" onclick="showSection('cam')">
+                <span class="nav-icon">📄</span>
+                <span class="nav-label">CAM Report</span>
+                <span class="layer-status" id="layerStatus6"></span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="decision" data-layer="7"
+                onclick="showSection('decision')">
+                <span class="nav-icon">✅</span>
+                <span class="nav-label">Decision Engine</span>
+                <span class="layer-status" id="layerStatus7"></span>
+            </a>
+
+            <div class="nav-divider"></div>
+
+            <a class="nav-item" data-section="history" onclick="showSection('history')">
+                <span class="nav-icon">🕐</span>
+                <span class="nav-label">History</span>
+            </a>
+            <a class="nav-item" data-section="users" onclick="showSection('users')" id="navUsers" style="display:none;">
+                <span class="nav-icon">👥</span>
+                <span class="nav-label">User Management</span>
+            </a>
+            <a class="nav-item" data-section="roles" onclick="showSection('roles')" id="navRoles" style="display:none;">
+                <span class="nav-icon">🔐</span>
+                <span class="nav-label">Role Management</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-footer-text">Intelli-Credit Challenge 2024</div>
+            <div class="sidebar-footer-text">AI Credit Decisioning Engine</div>
+        </div>
+    </aside>
+
+    <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="topbar">
+            <div>
+                <h1 class="topbar-title" id="pageTitle">Dashboard</h1>
+                <p class="topbar-subtitle" id="pageSubtitle">AI Corporate Credit Decisioning Engine</p>
+            </div>
+            <div class="topbar-right">
+                <div class="engine-status">
+                    <span class="status-dot active"></span>
+                    AI Engine Active
+                </div>
+                <div class="user-avatar" onclick="toggleUserMenu()" id="userAvatar">A</div>
+                <div class="user-menu" id="userMenu" style="display:none;">
+                    <div class="user-menu-name" id="userName">Admin</div>
+                    <div class="user-menu-role" id="userRole">SUPER_ADMIN</div>
+                    <div class="user-menu-divider"></div>
+                    <a href="/logout" class="user-menu-item">Sign Out</a>
+                </div>
+            </div>
+        </header>
+
+        <!-- ═══════════════ SECTION: DASHBOARD ═══════════════ -->
+        <section class="content-section active" id="section-dashboard">
+            <div class="hero-card">
+                <div class="hero-content">
+                    <div class="hero-badge">✨ INTELLI-CREDIT CHALLENGE 2024</div>
+                    <h2 class="hero-title">AI-Powered Corporate<br>Credit Decisioning Engine</h2>
+                    <p class="hero-desc">Ingest structured financial data, extract insights from PDFs,
+                        perform web-scale research, detect anomalies, and generate explainable
+                        credit decisions — all in minutes.</p>
+                    <button class="hero-btn" onclick="showNewAppModal()">
+                        ✨ Start New Application →
+                    </button>
+                </div>
+                <div class="hero-tags">
+                    <span class="hero-tag">LLM Powered</span>
+                    <span class="hero-tag">Explainable AI</span>
+                    <span class="hero-tag">Indian Context</span>
+                    <span class="hero-tag">GST + GSTR</span>
+                </div>
+            </div>
+
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon blue">📁</div>
+                    <h3>Multi-Source Ingestion</h3>
+                    <p>GST, ITR, Bank Statements, Annual Reports, Legal Notices</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon yellow">⚠️</div>
+                    <h3>Anomaly Detection</h3>
+                    <p>GST-Bank mismatch, Circular trading, Revenue spike flags</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon green">🌐</div>
+                    <h3>Web Research Agent</h3>
+                    <p>Real-time news, MCA filings, Litigation history scraping</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon purple">🎯</div>
+                    <h3>Explainable AI</h3>
+                    <p>Transparent risk scoring with factor-level explanations</p>
+                </div>
+            </div>
+
+            <div class="pipeline-section">
+                <h3 class="section-title">Processing Pipeline</h3>
+                <div class="pipeline-bar">
+                    <div class="pipeline-step" data-step="1">
+                        <div class="pipeline-step-icon">📁</div>
+                        <div class="pipeline-step-label">Data Ingestion</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-step" data-step="2">
+                        <div class="pipeline-step-icon">📈</div>
+                        <div class="pipeline-step-label">Financial Extraction</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-step" data-step="3">
+                        <div class="pipeline-step-icon">⚠️</div>
+                        <div class="pipeline-step-label">Anomaly Detection</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-step" data-step="4">
+                        <div class="pipeline-step-icon">🌐</div>
+                        <div class="pipeline-step-label">Web Research</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-step" data-step="5">
+                        <div class="pipeline-step-icon">🎯</div>
+                        <div class="pipeline-step-label">Risk Scoring</div>
+                    </div>
+                    <div class="pipeline-connector"></div>
+                    <div class="pipeline-step" data-step="6">
+                        <div class="pipeline-step-icon">📄</div>
+                        <div class="pipeline-step-label">CAM Generation</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: DATA INGESTION ═══════════════ -->
+        <section class="content-section" id="section-ingestion">
+            <div class="upload-zone" id="uploadZone" ondragover="event.preventDefault(); this.classList.add('dragover')"
+                ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event)">
+                <div class="upload-icon">📁</div>
+                <h3>Upload Financial Documents</h3>
+                <p>Drag & drop PDFs, Excel, or CSV files — Annual Reports, GST, ITR, Bank Statements</p>
+                <div class="upload-actions">
+                    <label class="btn btn-outline" for="fileInput">Browse Files</label>
+                    <input type="file" id="fileInput" multiple accept=".pdf,.csv,.xlsx,.xls" style="display:none"
+                        onchange="handleFileSelect(event)">
+                    <button class="btn btn-primary" onclick="runIngestion()" id="btnRunIngestion" disabled>
+                        ✨ Run AI Ingestion
+                    </button>
+                </div>
+            </div>
+
+            <div class="ingestion-grid">
+                <div class="card">
+                    <h3 class="card-title">Document Queue (<span id="docCount">0</span> files)</h3>
+                    <div class="doc-queue" id="docQueue">
+                        <div class="empty-state">No documents uploaded yet</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Extraction Pipeline</h3>
+                    <div class="extraction-steps">
+                        <div class="extraction-step">
+                            <div class="step-num">1</div>
+                            <div>
+                                <div class="step-title">OCR & Text Extraction</div>
+                                <div class="step-desc">PyMuPDF + EasyOCR on scanned PDFs</div>
+                            </div>
+                        </div>
+                        <div class="extraction-step">
+                            <div class="step-num">2</div>
+                            <div>
+                                <div class="step-title">Financial Metric Parsing</div>
+                                <div class="step-desc">Groq LLM extraction of Revenue, PAT, Debt</div>
+                            </div>
+                        </div>
+                        <div class="extraction-step">
+                            <div class="step-num">3</div>
+                            <div>
+                                <div class="step-title">JSON Structuring</div>
+                                <div class="step-desc">Normalize Indian format statements to schema</div>
+                            </div>
+                        </div>
+                        <div class="extraction-step">
+                            <div class="step-num">4</div>
+                            <div>
+                                <div class="step-title">Cross-validation</div>
+                                <div class="step-desc">GST vs ITR vs Bank reconciliation</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tech-stack">
+                        <h4>⚡ Tech Stack Used</h4>
+                        <div class="tech-item"><span class="tech-badge red">PyMuPDF</span> PDF text extraction</div>
+                        <div class="tech-item"><span class="tech-badge blue">EasyOCR</span> OCR for scanned docs</div>
+                        <div class="tech-item"><span class="tech-badge purple">Groq LLM</span> LLM extraction &
+                            structuring</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: FINANCIAL ANALYSIS ═══════════════ -->
+        <section class="content-section" id="section-financial">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">REVENUE FY24</div>
+                    <div class="kpi-value" id="kpiRevenue">—</div>
+                    <div class="kpi-trend up" id="kpiRevenueTrend"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">PAT FY24</div>
+                    <div class="kpi-value" id="kpiPat">—</div>
+                    <div class="kpi-trend up" id="kpiPatTrend"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">DEBT/EQUITY</div>
+                    <div class="kpi-value" id="kpiDe">—</div>
+                    <div class="kpi-trend" id="kpiDeTrend"></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">CURRENT RATIO</div>
+                    <div class="kpi-value" id="kpiCr">—</div>
+                    <div class="kpi-trend" id="kpiCrTrend"></div>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="card-title">Full Financial Summary</h3>
+                <div class="table-wrap">
+                    <table class="data-table" id="financialTable">
+                        <thead>
+                            <tr>
+                                <th>METRIC</th>
+                                <th>Value</th>
+                                <th>Confidence</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="financialTableBody">
+                            <tr>
+                                <td colspan="4" class="empty-state">Run pipeline to populate</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: ANOMALY DETECTION ═══════════════ -->
+        <section class="content-section" id="section-anomaly">
+            <div class="card">
+                <h3 class="card-title">Anomaly Detection Results</h3>
+                <div id="anomalyResults" class="empty-state">Run pipeline to detect anomalies</div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: WEB RESEARCH ═══════════════ -->
+        <section class="content-section" id="section-research">
+            <div class="card">
+                <h3 class="card-title">Web Research Agent Results</h3>
+                <div id="researchResults" class="empty-state">Run pipeline to perform web research</div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: RISK SCORING ═══════════════ -->
+        <section class="content-section" id="section-scoring">
+            <div class="scoring-grid">
+                <div class="card">
+                    <h3 class="card-title">Overall Risk Score</h3>
+                    <div class="risk-donut" id="riskDonut">
+                        <svg viewBox="0 0 120 120" class="donut-svg">
+                            <circle cx="60" cy="60" r="50" stroke="#1e293b" stroke-width="12" fill="none" />
+                            <circle cx="60" cy="60" r="50" stroke="#ef4444" stroke-width="12" fill="none"
+                                stroke-dasharray="0 314" id="donutCircle" stroke-linecap="round"
+                                transform="rotate(-90 60 60)" />
+                        </svg>
+                        <div class="donut-label">
+                            <span class="donut-score" id="riskScoreNum">—</span>
+                            <span class="donut-max">/ 100</span>
+                        </div>
+                    </div>
+                    <div class="risk-grade" id="riskGrade">—</div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">AI Processing Pipeline</h3>
+                    <div class="pipeline-status-list" id="pipelineStatusList">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Decision Summary</h3>
+                    <div id="decisionSummary" class="empty-state">Pending pipeline completion</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: CAM REPORT ═══════════════ -->
+        <section class="content-section" id="section-cam">
+            <div class="card">
+                <h3 class="card-title">CAM Report — Structured Report</h3>
+                <div id="camReport" class="empty-state">CAM report will be generated after all layers complete</div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: DECISION ENGINE ═══════════════ -->
+        <section class="content-section" id="section-decision">
+            <div class="card">
+                <h3 class="card-title">Decision Engine</h3>
+                <div id="decisionEngine" class="empty-state">Final decision will appear here after pipeline completes
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: HISTORY ═══════════════ -->
+        <section class="content-section" id="section-history">
+            <div class="card">
+                <h3 class="card-title">Application History</h3>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Case ID</th>
+                                <th>Company</th>
+                                <th>Status</th>
+                                <th>Risk Score</th>
+                                <th>Decision</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <tr>
+                                <td colspan="7" class="empty-state">No completed applications</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: USER MANAGEMENT ═══════════════ -->
+        <section class="content-section" id="section-users">
+            <div class="section-header">
+                <h3 class="section-title">User Management</h3>
+                <button class="btn btn-primary" onclick="showCreateUserModal()">+ Create User</button>
+            </div>
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Full Name</th>
+                                <th>Role</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="5" class="empty-state">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════ SECTION: ROLE MANAGEMENT ═══════════════ -->
+        <section class="content-section" id="section-roles">
+            <div class="section-header">
+                <h3 class="section-title">Role Hierarchy</h3>
+                <button class="btn btn-primary" onclick="showCreateRoleModal()">+ Create Role</button>
+            </div>
+            <p class="section-desc">Drag and drop roles to organize hierarchy. Higher roles (Top) can manage lower roles
+                (Bottom).</p>
+            <div class="card">
+                <div class="role-list" id="roleList">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- ═══════════════════ MODALS ═══════════════════ -->
+    <!-- New Application Modal -->
+    <div class="modal-overlay" id="modalNewApp" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Start New Application</h3>
+                <button class="modal-close" onclick="closeModal('modalNewApp')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input type="text" id="inputCompanyName" placeholder="e.g. Apex Manufacturing Pvt. Ltd.">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('modalNewApp')">Cancel</button>
+                <button class="btn btn-primary" onclick="createApplication()">Create & Upload Files</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create User Modal -->
+    <div class="modal-overlay" id="modalCreateUser" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Create New User</h3>
+                <button class="modal-close" onclick="closeModal('modalCreateUser')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="inputUserFullName" placeholder="John Doe">
+                </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="inputUserUsername" placeholder="johndoe">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="inputUserPassword" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="inputUserRole">
+                        <option value="">Loading roles...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('modalCreateUser')">Cancel</button>
+                <button class="btn btn-primary" onclick="createUser()">Create User</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Role Modal -->
+    <div class="modal-overlay" id="modalCreateRole" style="display:none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Create New Role</h3>
+                <button class="modal-close" onclick="closeModal('modalCreateRole')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Role Name</label>
+                    <input type="text" id="inputRoleName" placeholder="e.g. BRANCH_MANAGER">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="inputRoleDesc" placeholder="e.g. Branch-level credit officer">
+                </div>
+                <div class="form-group">
+                    <label>Permissions</label>
+                    <div class="perm-grid" id="permGrid">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('modalCreateRole')">Cancel</button>
+                <button class="btn btn-primary" onclick="createRole()">Create Role</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+    <script src="/static/js/dashboard.js"></script>
+</body>
+
+</html>

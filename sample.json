@@ -1,0 +1,1351 @@
+{
+    "meta": {
+        "case_id": "IC-2025-001",
+        "company_name": "Rajan Textiles Pvt Ltd",
+        "extraction_timestamp": "2025-03-15T10:41:00Z",
+        "schema_version": "2.1",
+        "pipeline_version": "1.0.0",
+        "llm_model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "llm_provider": "groq",
+        "ocr_engine": "pymupdf_primary_easyocr_fallback",
+        "documents_processed": {
+            "SRC_GST": {
+                "filename": "gstr3b_FY24.pdf",
+                "file_hash": "sha256:abc123",
+                "pages": 12,
+                "ocr_used": false,
+                "extraction_confidence": 0.93
+            },
+            "SRC_ITR": {
+                "filename": "itr6_FY24.pdf",
+                "file_hash": "sha256:def456",
+                "pages": 8,
+                "ocr_used": false,
+                "extraction_confidence": 0.94
+            },
+            "SRC_BANK": {
+                "filename": "sbi_statement_12m.pdf",
+                "file_hash": "sha256:ghi789",
+                "pages": 24,
+                "ocr_used": false,
+                "extraction_confidence": 0.97
+            },
+            "SRC_FS": {
+                "filename": "financials_FY24.pdf",
+                "file_hash": "sha256:jkl012",
+                "pages": 45,
+                "ocr_used": true,
+                "extraction_confidence": 0.91
+            },
+            "SRC_AR": {
+                "filename": "annual_report_FY24.pdf",
+                "file_hash": "sha256:mno345",
+                "pages": 120,
+                "ocr_used": true,
+                "extraction_confidence": 0.89
+            },
+            "SRC_BMM": {
+                "filename": "board_minutes_2024.pdf",
+                "file_hash": "sha256:pqr678",
+                "pages": 6,
+                "ocr_used": false,
+                "extraction_confidence": 0.91
+            },
+            "SRC_RAT": {
+                "filename": "crisil_rating_2024.pdf",
+                "file_hash": "sha256:stu901",
+                "pages": 4,
+                "ocr_used": false,
+                "extraction_confidence": 0.96
+            },
+            "SRC_SHP": {
+                "filename": "shareholding_Q3.pdf",
+                "file_hash": "sha256:vwx234",
+                "pages": 3,
+                "ocr_used": false,
+                "extraction_confidence": 0.95
+            }
+        },
+        "extraction_summary": {
+            "total_fields_attempted": 74,
+            "fields_extracted": 68,
+            "fields_null": 6,
+            "fields_low_confidence": 5,
+            "human_review_queue": 2,
+            "overall_quality_score": 91.2
+        }
+    },
+    "extracted": {
+        "SRC_GST": {
+            "gstin": {
+                "value": "24AABCR1234F1Z5",
+                "confidence": 0.99,
+                "source_page": 1,
+                "raw_snippet": "GSTIN: 24AABCR1234F1Z5",
+                "extraction_method": "regex"
+            },
+            "gstin_registration_status": {
+                "value": "Active",
+                "confidence": 0.99,
+                "source_page": 1,
+                "raw_snippet": "Registration Status: Active",
+                "extraction_method": "regex"
+            },
+            "gstr1_monthly_outward_turnover": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "taxable_value_inr_lakhs": 142.5
+                    },
+                    {
+                        "month": "May-2023",
+                        "taxable_value_inr_lakhs": 138.2
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "taxable_value_inr_lakhs": 155.8
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "taxable_value_inr_lakhs": 149.3
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "taxable_value_inr_lakhs": 161.7
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "taxable_value_inr_lakhs": 158.4
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "taxable_value_inr_lakhs": 172.1
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "taxable_value_inr_lakhs": 168.9
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "taxable_value_inr_lakhs": 175.3
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "taxable_value_inr_lakhs": 163.8
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "taxable_value_inr_lakhs": 159.2
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "taxable_value_inr_lakhs": 182.6
+                    }
+                ],
+                "confidence": 0.92,
+                "source_page": 3,
+                "raw_snippet": "Table 4A - Taxable outward supplies...",
+                "extraction_method": "llm"
+            },
+            "gstr2a_monthly_itc_available": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "itc_available_inr_lakhs": 18.4
+                    },
+                    {
+                        "month": "May-2023",
+                        "itc_available_inr_lakhs": 17.9
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "itc_available_inr_lakhs": 19.2
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "itc_available_inr_lakhs": 18.7
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "itc_available_inr_lakhs": 20.1
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "itc_available_inr_lakhs": 19.8
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "itc_available_inr_lakhs": 21.3
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "itc_available_inr_lakhs": 20.9
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "itc_available_inr_lakhs": 21.8
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "itc_available_inr_lakhs": 20.4
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "itc_available_inr_lakhs": 19.9
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "itc_available_inr_lakhs": 22.7
+                    }
+                ],
+                "confidence": 0.88,
+                "source_page": 5,
+                "extraction_method": "llm"
+            },
+            "gstr3b_monthly_itc_claimed": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "itc_claimed_inr_lakhs": 15.1
+                    },
+                    {
+                        "month": "May-2023",
+                        "itc_claimed_inr_lakhs": 14.8
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "itc_claimed_inr_lakhs": 16.3
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "itc_claimed_inr_lakhs": 15.9
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "itc_claimed_inr_lakhs": 17.2
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "itc_claimed_inr_lakhs": 16.8
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "itc_claimed_inr_lakhs": 18.1
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "itc_claimed_inr_lakhs": 17.7
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "itc_claimed_inr_lakhs": 18.5
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "itc_claimed_inr_lakhs": 17.3
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "itc_claimed_inr_lakhs": 16.9
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "itc_claimed_inr_lakhs": 19.3
+                    }
+                ],
+                "confidence": 0.91,
+                "source_page": 5,
+                "extraction_method": "llm"
+            },
+            "gst_filing_dates": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "due_date": "2023-05-20",
+                        "filed_date": "2023-05-18",
+                        "on_time": true
+                    },
+                    {
+                        "month": "May-2023",
+                        "due_date": "2023-06-20",
+                        "filed_date": "2023-06-25",
+                        "on_time": false
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "due_date": "2023-07-20",
+                        "filed_date": "2023-07-19",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "due_date": "2023-08-20",
+                        "filed_date": "2023-08-20",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "due_date": "2023-09-20",
+                        "filed_date": "2023-09-18",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "due_date": "2023-10-20",
+                        "filed_date": "2023-10-22",
+                        "on_time": false
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "due_date": "2023-11-20",
+                        "filed_date": "2023-11-19",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "due_date": "2023-12-20",
+                        "filed_date": "2023-12-20",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "due_date": "2024-01-20",
+                        "filed_date": "2024-01-18",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "due_date": "2024-02-20",
+                        "filed_date": "2024-02-20",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "due_date": "2024-03-20",
+                        "filed_date": "2024-03-19",
+                        "on_time": true
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "due_date": "2024-04-20",
+                        "filed_date": "2024-04-21",
+                        "on_time": false
+                    }
+                ],
+                "confidence": 0.95,
+                "source_page": 2,
+                "extraction_method": "regex"
+            }
+        },
+        "SRC_ITR": {
+            "pan_number": {
+                "value": "AABCR1234F",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "regex"
+            },
+            "assessment_years_covered": {
+                "value": [
+                    "AY2024-25",
+                    "AY2023-24",
+                    "AY2022-23"
+                ],
+                "confidence": 0.99,
+                "extraction_method": "llm"
+            },
+            "net_profit_after_tax": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "pat_inr_lakhs": 87.3
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "pat_inr_lakhs": 71.8
+                    },
+                    {
+                        "financial_year": "FY22",
+                        "pat_inr_lakhs": 58.4
+                    }
+                ],
+                "confidence": 0.94,
+                "source_page": 4,
+                "raw_snippet": "Net Profit after tax: 87.32 Lakhs for AY2024-25",
+                "extraction_method": "llm"
+            },
+            "gross_revenue": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "revenue_inr_lakhs": 1934.2
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "revenue_inr_lakhs": 1661.5
+                    },
+                    {
+                        "financial_year": "FY22",
+                        "revenue_inr_lakhs": 1428.9
+                    }
+                ],
+                "confidence": 0.96,
+                "source_page": 3,
+                "extraction_method": "llm"
+            },
+            "total_assets": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "total_assets_inr_lakhs": 1243.7
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "total_assets_inr_lakhs": 1089.4
+                    }
+                ],
+                "confidence": 0.91,
+                "source_page": 5,
+                "extraction_method": "llm"
+            },
+            "total_liabilities": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "total_liabilities_inr_lakhs": 876.4
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "total_liabilities_inr_lakhs": 754.2
+                    }
+                ],
+                "confidence": 0.91,
+                "source_page": 5,
+                "extraction_method": "llm"
+            },
+            "tax_paid": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "tax_paid_inr_lakhs": 31.4
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "tax_paid_inr_lakhs": 25.8
+                    }
+                ],
+                "confidence": 0.89,
+                "source_page": 6,
+                "extraction_method": "llm"
+            },
+            "director_remuneration": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "remuneration_inr_lakhs": 24.0
+                    }
+                ],
+                "confidence": 0.87,
+                "source_page": 5,
+                "extraction_method": "llm"
+            },
+            "loans_from_directors": {
+                "value": [],
+                "confidence": 0.90,
+                "extraction_method": "llm",
+                "notes": "No director loans found"
+            }
+        },
+        "SRC_BANK": {
+            "bank_name": {
+                "value": "State Bank of India",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "regex"
+            },
+            "account_number_masked": {
+                "value": "XXXX XXXX 4521",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "regex"
+            },
+            "account_type": {
+                "value": "CC",
+                "confidence": 0.98,
+                "source_page": 1,
+                "extraction_method": "regex"
+            },
+            "statement_period": {
+                "value": {
+                    "from": "2023-04-01",
+                    "to": "2024-03-31"
+                },
+                "confidence": 0.99,
+                "extraction_method": "regex"
+            },
+            "od_cc_limit_sanctioned_inr_lakhs": {
+                "value": 400.0,
+                "confidence": 0.97,
+                "source_page": 1,
+                "raw_snippet": "Sanctioned Limit: Rs. 4,00,00,000",
+                "extraction_method": "regex"
+            },
+            "monthly_closing_balance": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "closing_balance_inr_lakhs": 42.3
+                    },
+                    {
+                        "month": "May-2023",
+                        "closing_balance_inr_lakhs": 38.7
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "closing_balance_inr_lakhs": 51.2
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "closing_balance_inr_lakhs": 45.8
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "closing_balance_inr_lakhs": 63.4
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "closing_balance_inr_lakhs": 58.9
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "closing_balance_inr_lakhs": 71.2
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "closing_balance_inr_lakhs": 67.5
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "closing_balance_inr_lakhs": 82.1
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "closing_balance_inr_lakhs": 74.3
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "closing_balance_inr_lakhs": 69.8
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "closing_balance_inr_lakhs": 91.4
+                    }
+                ],
+                "confidence": 0.97,
+                "extraction_method": "pandas"
+            },
+            "monthly_total_credits": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "total_credits_inr_lakhs": 148.3
+                    },
+                    {
+                        "month": "May-2023",
+                        "total_credits_inr_lakhs": 141.9
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "total_credits_inr_lakhs": 162.4
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "total_credits_inr_lakhs": 154.7
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "total_credits_inr_lakhs": 168.2
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "total_credits_inr_lakhs": 163.8
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "total_credits_inr_lakhs": 178.5
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "total_credits_inr_lakhs": 172.3
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "total_credits_inr_lakhs": 181.6
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "total_credits_inr_lakhs": 169.4
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "total_credits_inr_lakhs": 164.7
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "total_credits_inr_lakhs": 189.2
+                    }
+                ],
+                "confidence": 0.97,
+                "extraction_method": "pandas"
+            },
+            "monthly_total_debits": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "total_debits_inr_lakhs": 144.7
+                    },
+                    {
+                        "month": "May-2023",
+                        "total_debits_inr_lakhs": 145.5
+                    },
+                    {
+                        "month": "Jun-2023",
+                        "total_debits_inr_lakhs": 151.1
+                    },
+                    {
+                        "month": "Jul-2023",
+                        "total_debits_inr_lakhs": 160.1
+                    },
+                    {
+                        "month": "Aug-2023",
+                        "total_debits_inr_lakhs": 151.5
+                    },
+                    {
+                        "month": "Sep-2023",
+                        "total_debits_inr_lakhs": 168.5
+                    },
+                    {
+                        "month": "Oct-2023",
+                        "total_debits_inr_lakhs": 163.1
+                    },
+                    {
+                        "month": "Nov-2023",
+                        "total_debits_inr_lakhs": 176.0
+                    },
+                    {
+                        "month": "Dec-2023",
+                        "total_debits_inr_lakhs": 157.0
+                    },
+                    {
+                        "month": "Jan-2024",
+                        "total_debits_inr_lakhs": 177.0
+                    },
+                    {
+                        "month": "Feb-2024",
+                        "total_debits_inr_lakhs": 164.3
+                    },
+                    {
+                        "month": "Mar-2024",
+                        "total_debits_inr_lakhs": 167.6
+                    }
+                ],
+                "confidence": 0.97,
+                "extraction_method": "pandas"
+            },
+            "cheque_bounce_entries": {
+                "value": [
+                    {
+                        "date": "2023-07-14",
+                        "narration": "CHQ RTN 004521 INSUFF FUNDS",
+                        "amount_inr_lakhs": 4.5,
+                        "type": "DR",
+                        "reason": "Insufficient Funds"
+                    },
+                    {
+                        "date": "2023-11-22",
+                        "narration": "INWARD RTN 007832",
+                        "amount_inr_lakhs": 2.8,
+                        "type": "DR",
+                        "reason": "Account Closed"
+                    }
+                ],
+                "confidence": 0.99,
+                "extraction_method": "regex_keyword_scan"
+            },
+            "emi_loan_repayment_entries": {
+                "value": [
+                    {
+                        "date": "2023-04-05",
+                        "narration": "NACH DR HDFC TERM LOAN EMI",
+                        "amount_inr_lakhs": 8.3,
+                        "type": "DR",
+                        "lender_name": "HDFC"
+                    },
+                    {
+                        "date": "2023-05-05",
+                        "narration": "NACH DR HDFC TERM LOAN EMI",
+                        "amount_inr_lakhs": 8.3,
+                        "type": "DR",
+                        "lender_name": "HDFC"
+                    },
+                    {
+                        "date": "2023-06-05",
+                        "narration": "NACH DR HDFC TERM LOAN EMI",
+                        "amount_inr_lakhs": 8.3,
+                        "type": "DR",
+                        "lender_name": "HDFC"
+                    }
+                ],
+                "confidence": 0.98,
+                "extraction_method": "regex_keyword_scan"
+            },
+            "gst_payment_entries": {
+                "value": [
+                    {
+                        "date": "2023-04-20",
+                        "narration": "NEFT GST PMT 24AABCR1234F1Z5",
+                        "amount_inr_lakhs": 12.4,
+                        "type": "DR"
+                    },
+                    {
+                        "date": "2023-05-19",
+                        "narration": "NEFT GST PMT 24AABCR1234F1Z5",
+                        "amount_inr_lakhs": 11.8,
+                        "type": "DR"
+                    }
+                ],
+                "confidence": 0.96,
+                "extraction_method": "regex_keyword_scan"
+            },
+            "large_round_transfers": {
+                "value": [
+                    {
+                        "date": "2023-08-31",
+                        "narration": "NEFT TO AGARWAL YARN TRADERS",
+                        "amount_inr_lakhs": 50.0,
+                        "type": "DR"
+                    },
+                    {
+                        "date": "2023-09-30",
+                        "narration": "NEFT TO AGARWAL YARN TRADERS",
+                        "amount_inr_lakhs": 50.0,
+                        "type": "DR"
+                    }
+                ],
+                "confidence": 0.97,
+                "extraction_method": "pandas_filter",
+                "notes": "Amount > 10L and round figure — flagged for Layer 4 circular trading check"
+            },
+            "salary_entries": {
+                "value": [
+                    {
+                        "month": "Apr-2023",
+                        "narration": "SALARY CREDIT APRIL 2023",
+                        "amount_inr_lakhs": 8.7,
+                        "type": "DR"
+                    },
+                    {
+                        "month": "May-2023",
+                        "narration": "SALARY CREDIT MAY 2023",
+                        "amount_inr_lakhs": 8.7,
+                        "type": "DR"
+                    }
+                ],
+                "confidence": 0.95,
+                "extraction_method": "regex_keyword_scan"
+            }
+        },
+        "SRC_FS": {
+            "financial_years_covered": {
+                "value": [
+                    "FY24",
+                    "FY23",
+                    "FY22"
+                ],
+                "confidence": 0.99,
+                "extraction_method": "llm"
+            },
+            "accounting_standard": {
+                "value": "Ind-AS",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "audit_firm": {
+                "value": "M/s Shah & Associates, Chartered Accountants",
+                "confidence": 0.97,
+                "source_page": 2,
+                "extraction_method": "llm"
+            },
+            "revenue": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "revenue_inr_lakhs": 1934.2,
+                        "_source_page": 8
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "revenue_inr_lakhs": 1661.5,
+                        "_source_page": 8
+                    },
+                    {
+                        "financial_year": "FY22",
+                        "revenue_inr_lakhs": 1428.9,
+                        "_source_page": 8
+                    }
+                ],
+                "confidence": 0.95,
+                "extraction_method": "llm"
+            },
+            "ebitda": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "ebitda_inr_lakhs": 243.7
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "ebitda_inr_lakhs": 198.4
+                    },
+                    {
+                        "financial_year": "FY22",
+                        "ebitda_inr_lakhs": 167.2
+                    }
+                ],
+                "confidence": 0.88,
+                "source_page": 9,
+                "extraction_method": "llm"
+            },
+            "depreciation_amortization": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "da_inr_lakhs": 42.1
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "da_inr_lakhs": 38.6
+                    },
+                    {
+                        "financial_year": "FY22",
+                        "da_inr_lakhs": 34.2
+                    }
+                ],
+                "confidence": 0.93,
+                "source_page": 9,
+                "extraction_method": "llm"
+            },
+            "interest_expense": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "interest_inr_lakhs": 54.8
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "interest_inr_lakhs": 48.3
+                    },
+                    {
+                        "financial_year": "FY22",
+                        "interest_inr_lakhs": 39.7
+                    }
+                ],
+                "confidence": 0.91,
+                "source_page": 10,
+                "extraction_method": "llm"
+            },
+            "total_debt_service": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "principal_repayment_inr_lakhs": 99.6,
+                        "interest_inr_lakhs": 54.8,
+                        "total_debt_service_inr_lakhs": 154.4
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "principal_repayment_inr_lakhs": 90.4,
+                        "interest_inr_lakhs": 48.3,
+                        "total_debt_service_inr_lakhs": 138.7
+                    }
+                ],
+                "confidence": 0.87,
+                "source_page": 22,
+                "extraction_method": "llm"
+            },
+            "current_assets": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "current_assets_inr_lakhs": 687.4
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "current_assets_inr_lakhs": 601.3
+                    }
+                ],
+                "confidence": 0.94,
+                "source_page": 11,
+                "extraction_method": "llm"
+            },
+            "current_liabilities": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "current_liabilities_inr_lakhs": 534.2
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "current_liabilities_inr_lakhs": 478.6
+                    }
+                ],
+                "confidence": 0.94,
+                "source_page": 11,
+                "extraction_method": "llm"
+            },
+            "total_debt": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "short_term_debt_inr_lakhs": 280.0,
+                        "long_term_debt_inr_lakhs": 320.5,
+                        "total_debt_inr_lakhs": 600.5
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "short_term_debt_inr_lakhs": 241.3,
+                        "long_term_debt_inr_lakhs": 298.7,
+                        "total_debt_inr_lakhs": 540.0
+                    }
+                ],
+                "confidence": 0.90,
+                "source_page": 12,
+                "extraction_method": "llm"
+            },
+            "shareholders_equity": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "equity_inr_lakhs": 367.3
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "equity_inr_lakhs": 335.2
+                    }
+                ],
+                "confidence": 0.95,
+                "source_page": 11,
+                "extraction_method": "llm"
+            },
+            "trade_receivables": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "receivables_inr_lakhs": 312.4
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "receivables_inr_lakhs": 278.6
+                    }
+                ],
+                "confidence": 0.92,
+                "source_page": 13,
+                "extraction_method": "llm"
+            },
+            "inventory": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "inventory_inr_lakhs": 198.7
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "inventory_inr_lakhs": 174.3
+                    }
+                ],
+                "confidence": 0.91,
+                "source_page": 13,
+                "extraction_method": "llm"
+            },
+            "trade_payables": {
+                "value": [
+                    {
+                        "financial_year": "FY24",
+                        "payables_inr_lakhs": 187.3
+                    },
+                    {
+                        "financial_year": "FY23",
+                        "payables_inr_lakhs": 162.8
+                    }
+                ],
+                "confidence": 0.92,
+                "source_page": 14,
+                "extraction_method": "llm"
+            },
+            "contingent_liabilities": {
+                "value": [
+                    {
+                        "description": "Income tax demand under appeal",
+                        "amount_inr_lakhs": 18.5,
+                        "financial_year": "FY24"
+                    },
+                    {
+                        "description": "GST demand notice",
+                        "amount_inr_lakhs": 7.2,
+                        "financial_year": "FY24"
+                    }
+                ],
+                "confidence": 0.89,
+                "source_page": 28,
+                "extraction_method": "llm"
+            }
+        },
+        "SRC_AR": {
+            "company_name": {
+                "value": "Rajan Textiles Private Limited",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "company_cin": {
+                "value": "U17100GJ2015PTC084521",
+                "confidence": 0.99,
+                "source_page": 1,
+                "raw_snippet": "CIN: U17100GJ2015PTC084521",
+                "extraction_method": "regex"
+            },
+            "registered_office": {
+                "value": "Plot No. 234/A, GIDC Sachin, Surat, Gujarat - 394230",
+                "confidence": 0.97,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "industry_name": {
+                "value": "Textile Manufacturing",
+                "confidence": 0.99,
+                "extraction_method": "llm"
+            },
+            "industry_nic_code": {
+                "value": "13111",
+                "confidence": 0.85,
+                "source_page": 2,
+                "extraction_method": "llm"
+            },
+            "directors_list": {
+                "value": [
+                    {
+                        "name": "Rajesh Kumar Agarwal",
+                        "din": "01234567",
+                        "designation": "Managing Director",
+                        "appointment_date": "2015-04-01"
+                    },
+                    {
+                        "name": "Sunita Agarwal",
+                        "din": "01234568",
+                        "designation": "Whole-time Director",
+                        "appointment_date": "2018-07-15"
+                    },
+                    {
+                        "name": "Mahesh Sharma",
+                        "din": "09876543",
+                        "designation": "Independent Director",
+                        "appointment_date": "2020-09-01"
+                    }
+                ],
+                "confidence": 0.96,
+                "source_page": 12,
+                "extraction_method": "llm"
+            },
+            "auditor_name": {
+                "value": "M/s Shah & Associates, Chartered Accountants",
+                "confidence": 0.98,
+                "source_page": 34,
+                "extraction_method": "llm"
+            },
+            "auditor_opinion": {
+                "value": "Unqualified",
+                "confidence": 0.97,
+                "source_page": 34,
+                "raw_snippet": "In our opinion and to the best of our information... give a true and fair view",
+                "extraction_method": "llm"
+            },
+            "auditor_qualification_text": {
+                "value": null,
+                "confidence": 0.95,
+                "extraction_method": "llm",
+                "notes": "No qualification found"
+            },
+            "going_concern_risk": {
+                "value": false,
+                "confidence": 0.95,
+                "source_page": 34,
+                "extraction_method": "llm"
+            },
+            "promoter_holding_percent": {
+                "value": 68.4,
+                "confidence": 0.94,
+                "source_page": 87,
+                "extraction_method": "llm"
+            },
+            "related_party_transactions": {
+                "value": [
+                    {
+                        "party_name": "Agarwal Yarn Traders",
+                        "relationship": "Promoter Entity",
+                        "transaction_type": "Purchase of Raw Material",
+                        "amount_inr_lakhs": 312.4,
+                        "financial_year": "FY24",
+                        "_source_page": 67
+                    },
+                    {
+                        "party_name": "Rajesh Kumar Agarwal",
+                        "relationship": "Managing Director",
+                        "transaction_type": "Director Remuneration",
+                        "amount_inr_lakhs": 24.0,
+                        "financial_year": "FY24",
+                        "_source_page": 67
+                    }
+                ],
+                "confidence": 0.91,
+                "source_page": 67,
+                "extraction_method": "llm"
+            },
+            "capex_commitments": {
+                "value": [
+                    {
+                        "description": "New spinning unit expansion",
+                        "amount_inr_lakhs": 200.0,
+                        "timeline": "FY25-26"
+                    }
+                ],
+                "confidence": 0.86,
+                "source_page": 22,
+                "extraction_method": "llm"
+            }
+        },
+        "SRC_BMM": {
+            "meeting_dates_covered": {
+                "value": [
+                    "2023-05-15",
+                    "2023-08-12",
+                    "2023-11-10",
+                    "2024-02-08"
+                ],
+                "confidence": 0.99,
+                "extraction_method": "llm"
+            },
+            "director_changes": {
+                "value": [],
+                "confidence": 0.92,
+                "extraction_method": "llm",
+                "notes": "No director changes in period"
+            },
+            "new_charges_hypothecation": {
+                "value": [
+                    {
+                        "date": "2023-09-15",
+                        "asset_description": "Factory land and building at GIDC Sachin Surat",
+                        "lender": "SBI",
+                        "amount_inr_lakhs": 500.0
+                    }
+                ],
+                "confidence": 0.94,
+                "source_page": 3,
+                "extraction_method": "llm"
+            },
+            "related_party_loan_resolutions": {
+                "value": [],
+                "confidence": 0.92,
+                "extraction_method": "llm"
+            },
+            "litigation_disclosures": {
+                "value": [],
+                "confidence": 0.88,
+                "extraction_method": "llm"
+            },
+            "auditor_change": {
+                "value": {
+                    "changed": false
+                },
+                "confidence": 0.94,
+                "extraction_method": "llm"
+            },
+            "dividend_declared": {
+                "value": [],
+                "confidence": 0.91,
+                "extraction_method": "llm"
+            }
+        },
+        "SRC_RAT": {
+            "rating_agency": {
+                "value": "CRISIL",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "regex"
+            },
+            "current_rating": {
+                "value": "BBB+",
+                "confidence": 0.99,
+                "source_page": 1,
+                "raw_snippet": "CRISIL BBB+/Stable reaffirmed",
+                "extraction_method": "regex"
+            },
+            "rating_outlook": {
+                "value": "Stable",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "rating_date": {
+                "value": "2024-01-15",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "rating_history": {
+                "value": [
+                    {
+                        "date": "2024-01-15",
+                        "rating": "BBB+",
+                        "action": "reaffirm"
+                    },
+                    {
+                        "date": "2023-01-10",
+                        "rating": "BBB",
+                        "action": "upgrade"
+                    },
+                    {
+                        "date": "2022-01-08",
+                        "rating": "BBB",
+                        "action": "reaffirm"
+                    }
+                ],
+                "confidence": 0.95,
+                "source_page": 2,
+                "extraction_method": "llm"
+            },
+            "key_strengths": {
+                "value": [
+                    {
+                        "strength": "Established track record in textile sector — 9 years"
+                    },
+                    {
+                        "strength": "Improving profitability and revenue trajectory"
+                    }
+                ],
+                "confidence": 0.93,
+                "extraction_method": "llm"
+            },
+            "key_weaknesses": {
+                "value": [
+                    {
+                        "weakness": "Geographic concentration — 80% revenue from Gujarat"
+                    },
+                    {
+                        "weakness": "High working capital intensity in textile sector"
+                    },
+                    {
+                        "weakness": "Exposure to cotton price volatility"
+                    }
+                ],
+                "confidence": 0.93,
+                "source_page": 3,
+                "extraction_method": "llm"
+            },
+            "agency_reported_ratios": {
+                "value": {
+                    "dscr": 1.28,
+                    "de_ratio": 1.65,
+                    "current_ratio": 1.27,
+                    "opm_percent": 12.4
+                },
+                "confidence": 0.91,
+                "source_page": 4,
+                "extraction_method": "llm",
+                "notes": "Use as cross-check against Layer 4 computed ratios"
+            }
+        },
+        "SRC_SHP": {
+            "quarter_end_date": {
+                "value": "2023-12-31",
+                "confidence": 0.99,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "promoter_holding_percent": {
+                "value": 68.4,
+                "confidence": 0.98,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "promoter_shares_pledged_percent": {
+                "value": 22.5,
+                "confidence": 0.97,
+                "source_page": 2,
+                "raw_snippet": "Shares pledged or encumbered: 22.50%",
+                "extraction_method": "llm"
+            },
+            "public_holding_percent": {
+                "value": 31.6,
+                "confidence": 0.97,
+                "extraction_method": "llm"
+            },
+            "institutional_holding_percent": {
+                "value": 8.3,
+                "confidence": 0.95,
+                "extraction_method": "llm"
+            },
+            "total_shares_outstanding": {
+                "value": 10000000,
+                "confidence": 0.98,
+                "source_page": 1,
+                "extraction_method": "llm"
+            },
+            "top_shareholders": {
+                "value": [
+                    {
+                        "name": "Rajesh Kumar Agarwal",
+                        "percent": 42.3,
+                        "category": "Promoter"
+                    },
+                    {
+                        "name": "Sunita Agarwal",
+                        "percent": 26.1,
+                        "category": "Promoter"
+                    },
+                    {
+                        "name": "HDFC Mutual Fund",
+                        "percent": 5.2,
+                        "category": "Institution"
+                    }
+                ],
+                "confidence": 0.94,
+                "source_page": 2,
+                "extraction_method": "llm"
+            }
+        }
+    },
+    "human_review_queue": [
+        {
+            "source": "SRC_FS",
+            "field": "total_debt_service",
+            "confidence": 0.87,
+            "reason": "Principal repayment schedule spread across multiple footnotes — verify manually",
+            "source_page": 22
+        },
+        {
+            "source": "SRC_AR",
+            "field": "industry_nic_code",
+            "confidence": 0.85,
+            "reason": "NIC code not explicitly stated — inferred from business description",
+            "source_page": 2
+        }
+    ],
+    "layer2_status": {
+        "status": "COMPLETE",
+        "ready_for_layer3": true,
+        "completed_at": "2025-03-15T10:41:00Z",
+        "missing_documents": [],
+        "notes": "All 8 documents processed. External sources (MCA, CIBIL, Courts, News) pending Layer 4."
+    }
+}
