@@ -33,7 +33,8 @@ DB_CONFIG = {
 }
 
 def get_db():
-    return mysql.connector.connect(**DB_CONFIG)
+    conn = mysql.connector.connect(**DB_CONFIG, autocommit=False)
+    return conn
 
 def init_database():
     """Create database and tables on first run."""
@@ -270,22 +271,14 @@ def list_roles():
     cur = conn.cursor(dictionary=True)
 
     if assignable and not session.get('is_super_admin'):
-        # Return only child roles of the current user's role
-        cur.execute("SELECT allowed_child_roles FROM roles WHERE name=%s", (session['role'],))
+        # Return only roles strictly BELOW the current user's hierarchy level
+        cur.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (session['role'],))
         row = cur.fetchone()
-        if row:
-            children = json.loads(row['allowed_child_roles']) if isinstance(row['allowed_child_roles'], str) else row['allowed_child_roles']
-            if children:
-                placeholders = ','.join(['%s'] * len(children))
-                cur.execute(f"SELECT * FROM roles WHERE name IN ({placeholders}) ORDER BY hierarchy_order", tuple(children))
-            else:
-                cur.close()
-                conn.close()
-                return jsonify([])
-        else:
-            cur.close()
-            conn.close()
-            return jsonify([])
+        my_order = row['hierarchy_order'] if row else 999
+        cur.execute(
+            "SELECT * FROM roles WHERE hierarchy_order > %s ORDER BY hierarchy_order",
+            (my_order,)
+        )
     else:
         cur.execute("SELECT * FROM roles ORDER BY hierarchy_order")
 
@@ -325,6 +318,38 @@ def create_role():
         return jsonify({"error": str(e)}), 400
     finally:
         cur.close()
+        conn.close()
+
+@app.route('/api/roles/update_details', methods=['POST'])
+@login_required
+def update_role_details():
+    perms = session.get('permissions', [])
+    if '*' not in perms and 'EDIT_ROLES' not in perms:
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.json
+    role_name = data.get('role')
+    new_desc = data.get('description')
+    new_perms = data.get('permissions', [])
+
+    if not role_name:
+        return jsonify({"error": "Role name required"}), 400
+    if role_name == 'SUPER_ADMIN':
+        return jsonify({"error": "Cannot modify SUPER_ADMIN"}), 403
+
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE roles SET description = %s, default_permissions = %s WHERE name = %s",
+                       (new_desc, json.dumps(new_perms), role_name))
+        conn.commit()
+        log_audit(session['user_id'], 'UPDATE_ROLE', target=f'role:{role_name}')
+        return jsonify({"message": "Role updated"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
         conn.close()
 
 @app.route('/api/roles/update_perms', methods=['POST'])
@@ -372,17 +397,52 @@ def delete_role():
 
     if role_name == 'SUPER_ADMIN':
         return jsonify({"error": "Cannot delete SUPER_ADMIN"}), 400
+    if not role_name:
+        return jsonify({"error": "Role name required"}), 400
 
     conn = get_db()
-    cur = conn.cursor()
-    if reassign_to:
-        cur.execute("UPDATE users SET role=%s WHERE role=%s", (reassign_to, role_name))
-    cur.execute("DELETE FROM roles WHERE name=%s", (role_name,))
-    conn.commit()
-    log_audit(session['user_id'], 'DELETE_ROLE', role_name)
-    cur.close()
-    conn.close()
-    return jsonify({"status": "ok"})
+    cur = conn.cursor(dictionary=True)
+    try:
+        # Check if any users are on this role
+        cur.execute("SELECT COUNT(*) as cnt FROM users WHERE role=%s", (role_name,))
+        row = cur.fetchone()
+        user_count = row['cnt'] if row else 0
+
+        if user_count > 0:
+            if not reassign_to:
+                # Return count so frontend can prompt user to pick a reassignment role
+                return jsonify({
+                    "error": f"{user_count} user(s) are assigned this role. Provide a 'reassign_to' role to proceed.",
+                    "user_count": user_count,
+                    "requires_reassign": True
+                }), 409
+            # Validate the target role exists
+            cur2 = conn.cursor()
+            cur2.execute("SELECT name FROM roles WHERE name=%s", (reassign_to,))
+            if not cur2.fetchone():
+                cur2.close()
+                return jsonify({"error": f"Reassign target role '{reassign_to}' not found"}), 400
+            cur2.close()
+            # Reassign users first
+            cur3 = conn.cursor()
+            cur3.execute("UPDATE users SET role=%s WHERE role=%s", (reassign_to, role_name))
+            cur3.close()
+
+        # Now safe to delete the role
+        cur4 = conn.cursor()
+        cur4.execute("DELETE FROM roles WHERE name=%s", (role_name,))
+        cur4.close()
+
+        conn.commit()
+        log_audit(session['user_id'], 'DELETE_ROLE', role_name,
+                  {"reassigned_to": reassign_to, "user_count": user_count})
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/api/roles/permissions')
 @login_required
@@ -390,7 +450,8 @@ def list_permissions():
     all_perms = [
         "CREATE_APP", "VIEW_APP", "DELETE_APP", "RUN_PIPELINE",
         "VIEW_RESULTS", "MANAGE_USERS", "MANAGE_ROLES",
-        "VIEW_HISTORY", "VIEW_AUDIT_LOGS", "SYSTEM_SETTINGS"
+        "VIEW_HISTORY", "VIEW_AUDIT_LOGS", "SYSTEM_SETTINGS",
+        "EDIT_USERS", "EDIT_ROLES"
     ]
     return jsonify(all_perms)
 
@@ -402,16 +463,39 @@ def list_permissions():
 def list_users():
     conn = get_db()
     cur = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT u.id, u.username, u.full_name, u.role, u.created_at,
-               c.full_name as created_by_name
-        FROM users u LEFT JOIN users c ON u.created_by = c.id
-        ORDER BY u.created_at DESC
-    """)
+
+    if session.get('is_super_admin'):
+        # Super Admin sees everyone
+        cur.execute("""
+            SELECT u.id, u.username, u.full_name, u.role, u.created_at,
+                   c.full_name as created_by_name, r.hierarchy_order
+            FROM users u
+            LEFT JOIN users c ON u.created_by = c.id
+            LEFT JOIN roles r ON u.role = r.name
+            ORDER BY r.hierarchy_order ASC, u.created_at DESC
+        """)
+    else:
+        # Get current user's hierarchy order
+        cur.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (session['role'],))
+        row = cur.fetchone()
+        my_order = row['hierarchy_order'] if row else 999
+
+        # Only return users whose role has a HIGHER order number (lower in hierarchy)
+        cur.execute("""
+            SELECT u.id, u.username, u.full_name, u.role, u.created_at,
+                   c.full_name as created_by_name, r.hierarchy_order
+            FROM users u
+            LEFT JOIN users c ON u.created_by = c.id
+            LEFT JOIN roles r ON u.role = r.name
+            WHERE r.hierarchy_order > %s
+            ORDER BY r.hierarchy_order ASC, u.created_at DESC
+        """, (my_order,))
+
     users = cur.fetchall()
     for u in users:
         if u.get('created_at'):
             u['created_at'] = u['created_at'].isoformat()
+        u.pop('hierarchy_order', None)  # Don't expose internals to frontend
     cur.close()
     conn.close()
     return jsonify(users)
@@ -429,18 +513,22 @@ def create_user():
     if not all([username, password, full_name, role]):
         return jsonify({"error": "All fields are required"}), 400
 
-    # Verify creator can assign this role
+    # Verify creator can assign this role (must be strictly lower in hierarchy)
     if not session.get('is_super_admin'):
-        conn = get_db()
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT allowed_child_roles FROM roles WHERE name=%s", (session['role'],))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if row:
-            children = json.loads(row['allowed_child_roles']) if isinstance(row['allowed_child_roles'], str) else row['allowed_child_roles']
-            if role not in children:
-                return jsonify({"error": "You cannot create users with this role"}), 403
+        conn2 = get_db()
+        cur2 = conn2.cursor(dictionary=True)
+        cur2.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (session['role'],))
+        my_row = cur2.fetchone()
+        my_order = my_row['hierarchy_order'] if my_row else 999
+
+        cur2.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (role,))
+        target_row = cur2.fetchone()
+        cur2.close()
+        conn2.close()
+
+        if not target_row or target_row['hierarchy_order'] <= my_order:
+            return jsonify({"error": "You cannot create users with this role"}), 403
+
 
     conn = get_db()
     cur = conn.cursor()
@@ -458,6 +546,70 @@ def create_user():
         cur.close()
         conn.close()
 
+@app.route('/api/users/update', methods=['POST'])
+@login_required
+def update_user():
+    perms = session.get('permissions', [])
+    if '*' not in perms and 'EDIT_USERS' not in perms:
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.json
+    user_id = data.get('id')
+    full_name = data.get('full_name')
+    role = data.get('role')
+
+    if not user_id or not full_name or not role:
+        return jsonify({"error": "Missing fields"}), 400
+
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Prevent non-SA from assigning SUPER_ADMIN
+        if '*' not in perms and role == 'SUPER_ADMIN':
+            return jsonify({"error": "Cannot assign SUPER_ADMIN role"}), 403
+
+        if not session.get('is_super_admin'):
+            # Get current user's hierarchy order
+            cursor.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (session['role'],))
+            my_row = cursor.fetchone()
+            my_order = my_row['hierarchy_order'] if my_row else 999
+
+            # Get target user's current role hierarchy
+            cursor.execute("""
+                SELECT r.hierarchy_order FROM users u
+                JOIN roles r ON u.role = r.name
+                WHERE u.id = %s
+            """, (user_id,))
+            target_row = cursor.fetchone()
+            if not target_row or target_row['hierarchy_order'] <= my_order:
+                return jsonify({"error": "You cannot edit users at your level or above"}), 403
+
+            # Also verify the NEW role is below current user
+            cursor.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (role,))
+            new_role_row = cursor.fetchone()
+            if not new_role_row or new_role_row['hierarchy_order'] <= my_order:
+                return jsonify({"error": "You cannot assign a role at your level or above"}), 403
+
+        cursor2 = conn.cursor()
+        cursor2.execute("UPDATE users SET full_name = %s, role = %s WHERE id = %s",
+                       (full_name, role, user_id))
+
+        if cursor2.rowcount == 0:
+            conn.rollback()
+            cursor2.close()
+            return jsonify({"error": "User not found or no changes"}), 404
+
+        cursor2.close()
+        conn.commit()
+        log_audit(session['user_id'], 'UPDATE_USER', target=f'user_id:{user_id}')
+        return jsonify({"message": "User updated successfully"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.route('/api/users/delete', methods=['POST'])
 @login_required
 @permission_required('MANAGE_USERS')
@@ -468,13 +620,36 @@ def delete_user():
         return jsonify({"error": "Cannot delete yourself"}), 400
 
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
-    conn.commit()
-    log_audit(session['user_id'], 'DELETE_USER', str(user_id))
-    cur.close()
-    conn.close()
-    return jsonify({"status": "ok"})
+    cur = conn.cursor(dictionary=True)
+    try:
+        if not session.get('is_super_admin'):
+            # Get current user's hierarchy order
+            cur.execute("SELECT hierarchy_order FROM roles WHERE name=%s", (session['role'],))
+            my_row = cur.fetchone()
+            my_order = my_row['hierarchy_order'] if my_row else 999
+
+            # Check target user's role hierarchy
+            cur.execute("""
+                SELECT r.hierarchy_order FROM users u
+                JOIN roles r ON u.role = r.name
+                WHERE u.id = %s
+            """, (user_id,))
+            target_row = cur.fetchone()
+            if not target_row or target_row['hierarchy_order'] <= my_order:
+                return jsonify({"error": "You cannot delete users at your level or above"}), 403
+
+        cur2 = conn.cursor()
+        cur2.execute("DELETE FROM users WHERE id=%s", (user_id,))
+        cur2.close()
+        conn.commit()
+        log_audit(session['user_id'], 'DELETE_USER', str(user_id))
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 
 # ─── Application APIs ────────────────────────────────────────────────────────
@@ -672,7 +847,7 @@ def handle_run_pipeline(data):
 
     from layer2.utils.dispatcher import DocumentDispatcher
 
-    filepaths = []
+    review_items = []
     for i, doc in enumerate(docs):
         try:
             meta = DocumentDispatcher.ingest(doc['file_path'])
@@ -682,56 +857,204 @@ def handle_run_pipeline(data):
                         (meta['target_key'], doc['id']))
             conn.commit()
             cur3.close()
-            filepaths.append(doc['file_path'])
+
+            review_items.append({
+                "doc_id": doc['id'],
+                "filename": doc['filename'],
+                "file_type": doc['file_type'],
+                "detected_category": meta['target_key'],
+                "pages": meta.get('pages', 1),
+                "ocr_required": meta.get('ocr_required', False),
+                "file_path": doc['file_path']
+            })
+
             pct = 10 + int((i + 1) / len(docs) * 40)
             emit('layer_progress', {"layer": 1, "name": "Data Ingestion", "status": "processing", "pct": pct})
         except Exception as e:
             print(f"Dispatch error for {doc['filename']}: {e}")
+            review_items.append({
+                "doc_id": doc['id'],
+                "filename": doc['filename'],
+                "file_type": doc['file_type'],
+                "detected_category": "SRC_UNKNOWN",
+                "pages": 1,
+                "ocr_required": False,
+                "file_path": doc['file_path']
+            })
 
     emit('layer_complete', {"layer": 1, "name": "Data Ingestion", "status": "done"})
 
-    # ─── Layer 2: Financial Extraction ───────────────────────────────────
-    emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 5})
-
-    cur4 = conn.cursor()
-    cur4.execute("UPDATE applications SET current_layer=2 WHERE id=%s", (app_id,))
+    # ─── HITL PAUSE: Save review data & wait for human confirmation ──────
+    cur_hitl = conn.cursor()
+    cur_hitl.execute(
+        "UPDATE applications SET status='awaiting_review' WHERE id=%s",
+        (app_id,)
+    )
     conn.commit()
-    cur4.close()
+    cur_hitl.close()
+
+    # Join a room so the confirm endpoint can notify this client
+    from flask_socketio import join_room
+    join_room(f'app_{app_id}')
+
+    emit('hitl_review_needed', {
+        "app_id": app_id,
+        "case_id": app_data['case_id'],
+        "company_name": app_data['company_name'],
+        "documents": review_items
+    })
+
+    cur.close()
+    conn.close()
+    # Pipeline STOPS here — Layer 2 will be triggered by confirm_docs endpoint
+
+
+# ─── HITL: Confirm Documents & Resume Pipeline ───────────────────────────────
+@app.route('/api/applications/<int:app_id>/review_docs')
+@login_required
+def review_docs(app_id):
+    """Return current doc classification data for review."""
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT id as doc_id, filename, file_type, detected_category, file_path
+        FROM documents WHERE application_id=%s ORDER BY id
+    """, (app_id,))
+    docs = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify(docs)
+
+
+@app.route('/api/applications/<int:app_id>/confirm_docs', methods=['POST'])
+@login_required
+def confirm_docs(app_id):
+    """Accept user-confirmed/corrected doc categories, then resume pipeline."""
+    data = request.json
+    corrections = data.get('documents', [])  # [{doc_id, detected_category}, ...]
+
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+
+    try:
+        # Verify application is in awaiting_review status
+        cur.execute("SELECT * FROM applications WHERE id=%s", (app_id,))
+        app_data = cur.fetchone()
+        if not app_data:
+            return jsonify({"error": "Application not found"}), 404
+        if app_data['status'] != 'awaiting_review':
+            return jsonify({"error": f"Application is not awaiting review (status: {app_data['status']})"}), 400
+
+        # Apply any corrections to document categories
+        cur2 = conn.cursor()
+        for doc in corrections:
+            doc_id = doc.get('doc_id')
+            new_category = doc.get('detected_category')
+            if doc_id and new_category:
+                cur2.execute(
+                    "UPDATE documents SET detected_category=%s WHERE id=%s AND application_id=%s",
+                    (new_category, doc_id, app_id)
+                )
+        cur2.close()
+
+        # Update app status to processing
+        cur3 = conn.cursor()
+        cur3.execute("UPDATE applications SET status='processing', current_layer=2 WHERE id=%s", (app_id,))
+        cur3.close()
+        conn.commit()
+
+        # Get confirmed file paths
+        cur4 = conn.cursor(dictionary=True)
+        cur4.execute("SELECT file_path FROM documents WHERE application_id=%s AND status='done'", (app_id,))
+        filepaths = [row['file_path'] for row in cur4.fetchall()]
+        cur4.close()
+
+        log_audit(session['user_id'], 'HITL_CONFIRM', app_data['case_id'],
+                  {"corrections": len(corrections)})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+    # Notify the frontend via WebSocket to resume progress display
+    socketio.emit('pipeline_resumed', {"app_id": app_id}, room=f'app_{app_id}')
+
+    # Run Layer 2+ in a background thread
+    socketio.start_background_task(
+        _run_pipeline_layer2_onwards,
+        app_id, app_data['case_id'], app_data['company_name'], filepaths
+    )
+
+    return jsonify({"status": "ok", "message": "Pipeline resuming"})
+
+
+@app.route('/api/applications/<int:app_id>/cancel_review', methods=['POST'])
+@login_required
+def cancel_review(app_id):
+    """Cancel pipeline — reset app to pending."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE applications SET status='pending', current_layer=0 WHERE id=%s AND status='awaiting_review'", (app_id,))
+        conn.commit()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths):
+    """Background task: run Layer 2 through Layer 6."""
+    import time
+
+    # ─── Layer 2: Financial Extraction ───────────────────────────────────
+    socketio.emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 5},
+                  room=f'app_{app_id}')
 
     try:
         from layer2.layer2_processor import IntelliCreditPipeline
         pipeline = IntelliCreditPipeline()
 
-        emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 30})
+        socketio.emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 30},
+                      room=f'app_{app_id}')
 
         result = pipeline.process_files(
             filepaths=filepaths,
-            case_id=app_data['case_id'],
-            company_name=app_data['company_name']
+            case_id=case_id,
+            company_name=company_name
         )
 
         output_json = result.model_dump_json(indent=2)
 
-        emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 90})
+        socketio.emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 90},
+                      room=f'app_{app_id}')
 
         # Save to DB
-        cur5 = conn.cursor()
-        cur5.execute("UPDATE applications SET layer2_output=%s, current_layer=3, status='completed', completed_at=NOW() WHERE id=%s",
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE applications SET layer2_output=%s, current_layer=3, status='completed', completed_at=NOW() WHERE id=%s",
                     (output_json, app_id))
         conn.commit()
-        cur5.close()
+        cur.close()
+        conn.close()
 
-        emit('layer_complete', {"layer": 2, "name": "Financial Extraction", "status": "done", "line_count": len(output_json.splitlines())})
+        socketio.emit('layer_complete', {"layer": 2, "name": "Financial Extraction", "status": "done",
+                      "line_count": len(output_json.splitlines())}, room=f'app_{app_id}')
 
     except Exception as e:
         print(f"Layer 2 pipeline error: {e}")
-        cur6 = conn.cursor()
-        cur6.execute("UPDATE applications SET status='failed' WHERE id=%s", (app_id,))
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE applications SET status='failed' WHERE id=%s", (app_id,))
         conn.commit()
-        cur6.close()
-        emit('pipeline_error', {"error": str(e), "layer": 2})
         cur.close()
         conn.close()
+        socketio.emit('pipeline_error', {"error": str(e), "layer": 2}, room=f'app_{app_id}')
         return
 
     # ─── Layers 3-6: Placeholder progress (future implementation) ────────
@@ -741,17 +1064,16 @@ def handle_run_pipeline(data):
         5: "Risk Scoring",
         6: "CAM Generation"
     }
-    import time
     for layer_num, layer_name in layer_names.items():
-        emit('layer_progress', {"layer": layer_num, "name": layer_name, "status": "processing", "pct": 50})
+        socketio.emit('layer_progress', {"layer": layer_num, "name": layer_name, "status": "processing", "pct": 50},
+                      room=f'app_{app_id}')
         time.sleep(1.5)
-        emit('layer_complete', {"layer": layer_num, "name": layer_name, "status": "done"})
+        socketio.emit('layer_complete', {"layer": layer_num, "name": layer_name, "status": "done"},
+                      room=f'app_{app_id}')
 
-    emit('pipeline_complete', {"app_id": app_id, "case_id": app_data['case_id'], "status": "completed"})
-    log_audit(session.get('user_id', 0), 'RUN_PIPELINE', app_data['case_id'])
+    socketio.emit('pipeline_complete', {"app_id": app_id, "case_id": case_id, "status": "completed"},
+                  room=f'app_{app_id}')
 
-    cur.close()
-    conn.close()
 
 
 # ─── Audit Logs API ──────────────────────────────────────────────────────────

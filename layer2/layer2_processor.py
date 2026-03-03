@@ -103,13 +103,30 @@ class IntelliCreditPipeline:
                     sample_data = json.load(f)
                     skeleton = sample_data.get("extracted", {}).get(target_key, {})
                     
+                    def _nullify(obj):
+                        """Recursively strip values → None, preserving schema keys & structure."""
+                        if isinstance(obj, dict):
+                            out = {}
+                            for k, v in obj.items():
+                                if k == "value":
+                                    # Null out actual values — lists become [], scalars become None
+                                    out[k] = [] if isinstance(v, list) else None
+                                elif k == "confidence":
+                                    out[k] = 0.0  # Mark as zero-confidence placeholder
+                                else:
+                                    out[k] = _nullify(v)
+                            return out
+                        elif isinstance(obj, list):
+                            return [_nullify(item) for item in obj]
+                        return obj
+
                     for sk, sv in skeleton.items():
                         if sk not in result_data:
-                            result_data[sk] = sv
-                        # For existing keys, replace their empty values with the exact nested stubs 
-                        # so that the 1300-line arrays are fully populated with nulls.
+                            # Pad with nullified version — structure only, no sample values
+                            result_data[sk] = _nullify(sv)
+                        # For existing keys with empty extraction, keep nulls (don't backfill)
                         elif isinstance(result_data[sk], dict) and not result_data[sk].get("value"):
-                             result_data[sk]["value"] = sv.get("value")
+                             result_data[sk]["value"] = None
             except Exception as e:
                 print(f"Failed to pad {target_key} schema: {e}")
                     

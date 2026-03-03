@@ -9,6 +9,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -34,47 +35,48 @@
 
         <nav class="sidebar-nav">
             <a class="nav-item active" data-section="dashboard" onclick="showSection('dashboard')">
-                <span class="nav-icon">📊</span>
+                <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span>
                 <span class="nav-label">Dashboard</span>
                 <span class="nav-arrow">›</span>
             </a>
-            <a class="nav-item" data-section="ingestion" onclick="showSection('ingestion')">
-                <span class="nav-icon">📁</span>
+            <a class="nav-item" data-section="ingestion" onclick="showSection('ingestion')"
+                data-nav-perm="RUN_PIPELINE">
+                <span class="nav-icon"><i data-lucide="folder-up"></i></span>
                 <span class="nav-label">Data Ingestion</span>
                 <span class="nav-badge" id="badgeIngestion" style="display:none;">0</span>
             </a>
             <a class="nav-item layer-item disabled" data-section="financial" data-layer="2"
                 onclick="showSection('financial')">
-                <span class="nav-icon">📈</span>
+                <span class="nav-icon"><i data-lucide="trending-up"></i></span>
                 <span class="nav-label">Financial Analysis</span>
                 <span class="layer-status" id="layerStatus2"></span>
             </a>
             <a class="nav-item layer-item disabled" data-section="anomaly" data-layer="3"
                 onclick="showSection('anomaly')">
-                <span class="nav-icon">⚠️</span>
+                <span class="nav-icon"><i data-lucide="alert-triangle"></i></span>
                 <span class="nav-label">Anomaly Detection</span>
                 <span class="layer-status" id="layerStatus3"></span>
             </a>
             <a class="nav-item layer-item disabled" data-section="research" data-layer="4"
                 onclick="showSection('research')">
-                <span class="nav-icon">🌐</span>
+                <span class="nav-icon"><i data-lucide="globe"></i></span>
                 <span class="nav-label">Web Research</span>
                 <span class="layer-status" id="layerStatus4"></span>
             </a>
             <a class="nav-item layer-item disabled" data-section="scoring" data-layer="5"
                 onclick="showSection('scoring')">
-                <span class="nav-icon">🎯</span>
+                <span class="nav-icon"><i data-lucide="target"></i></span>
                 <span class="nav-label">Risk Scoring</span>
                 <span class="layer-status" id="layerStatus5"></span>
             </a>
             <a class="nav-item layer-item disabled" data-section="cam" data-layer="6" onclick="showSection('cam')">
-                <span class="nav-icon">📄</span>
+                <span class="nav-icon"><i data-lucide="file-text"></i></span>
                 <span class="nav-label">CAM Report</span>
                 <span class="layer-status" id="layerStatus6"></span>
             </a>
             <a class="nav-item layer-item disabled" data-section="decision" data-layer="7"
                 onclick="showSection('decision')">
-                <span class="nav-icon">✅</span>
+                <span class="nav-icon"><i data-lucide="check-circle"></i></span>
                 <span class="nav-label">Decision Engine</span>
                 <span class="layer-status" id="layerStatus7"></span>
             </a>
@@ -82,21 +84,23 @@
             <div class="nav-divider"></div>
 
             <a class="nav-item" data-section="history" onclick="showSection('history')">
-                <span class="nav-icon">🕐</span>
+                <span class="nav-icon"><i data-lucide="clock"></i></span>
                 <span class="nav-label">History</span>
             </a>
             <a class="nav-item" data-section="users" onclick="showSection('users')" id="navUsers" style="display:none;">
-                <span class="nav-icon">👥</span>
+                <span class="nav-icon"><i data-lucide="users"></i></span>
                 <span class="nav-label">User Management</span>
             </a>
             <a class="nav-item" data-section="roles" onclick="showSection('roles')" id="navRoles" style="display:none;">
-                <span class="nav-icon">🔐</span>
+                <span class="nav-icon"><i data-lucide="shield"></i></span>
                 <span class="nav-label">Role Management</span>
             </a>
         </nav>
 
+
+
         <div class="sidebar-footer">
-            <div class="sidebar-footer-text">Intelli-Credit Challenge 2024</div>
+            <div class="sidebar-footer-text">Intelli-Credit Challenge 2026</div>
             <div class="sidebar-footer-text">AI Credit Decisioning Engine</div>
         </div>
     </aside>
@@ -128,13 +132,13 @@
         <section class="content-section active" id="section-dashboard">
             <div class="hero-card">
                 <div class="hero-content">
-                    <div class="hero-badge">✨ INTELLI-CREDIT CHALLENGE 2024</div>
+                    <div class="hero-badge">✨ INTELLI-CREDIT CHALLENGE 2026</div>
                     <h2 class="hero-title">AI-Powered Corporate<br>Credit Decisioning Engine</h2>
                     <p class="hero-desc">Ingest structured financial data, extract insights from PDFs,
                         perform web-scale research, detect anomalies, and generate explainable
                         credit decisions — all in minutes.</p>
-                    <button class="hero-btn" onclick="showNewAppModal()">
-                        ✨ Start New Application →
+                    <button class="hero-btn" onclick="showNewAppModal()" data-perm="CREATE_APP">
+                        <i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-1"></i> Start New Application
                     </button>
                 </div>
                 <div class="hero-tags">
@@ -147,22 +151,22 @@
 
             <div class="feature-grid">
                 <div class="feature-card">
-                    <div class="feature-icon blue">📁</div>
+                    <div class="feature-icon blue"><i data-lucide="folder-up"></i></div>
                     <h3>Multi-Source Ingestion</h3>
                     <p>GST, ITR, Bank Statements, Annual Reports, Legal Notices</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon yellow">⚠️</div>
+                    <div class="feature-icon yellow"><i data-lucide="alert-triangle"></i></div>
                     <h3>Anomaly Detection</h3>
                     <p>GST-Bank mismatch, Circular trading, Revenue spike flags</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon green">🌐</div>
+                    <div class="feature-icon green"><i data-lucide="globe"></i></div>
                     <h3>Web Research Agent</h3>
                     <p>Real-time news, MCA filings, Litigation history scraping</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon purple">🎯</div>
+                    <div class="feature-icon purple"><i data-lucide="target"></i></div>
                     <h3>Explainable AI</h3>
                     <p>Transparent risk scoring with factor-level explanations</p>
                 </div>
@@ -172,32 +176,32 @@
                 <h3 class="section-title">Processing Pipeline</h3>
                 <div class="pipeline-bar">
                     <div class="pipeline-step" data-step="1">
-                        <div class="pipeline-step-icon">📁</div>
+                        <div class="pipeline-step-icon"><i data-lucide="folder-up"></i></div>
                         <div class="pipeline-step-label">Data Ingestion</div>
                     </div>
                     <div class="pipeline-connector"></div>
                     <div class="pipeline-step" data-step="2">
-                        <div class="pipeline-step-icon">📈</div>
+                        <div class="pipeline-step-icon"><i data-lucide="trending-up"></i></div>
                         <div class="pipeline-step-label">Financial Extraction</div>
                     </div>
                     <div class="pipeline-connector"></div>
                     <div class="pipeline-step" data-step="3">
-                        <div class="pipeline-step-icon">⚠️</div>
+                        <div class="pipeline-step-icon"><i data-lucide="alert-triangle"></i></div>
                         <div class="pipeline-step-label">Anomaly Detection</div>
                     </div>
                     <div class="pipeline-connector"></div>
                     <div class="pipeline-step" data-step="4">
-                        <div class="pipeline-step-icon">🌐</div>
+                        <div class="pipeline-step-icon"><i data-lucide="globe"></i></div>
                         <div class="pipeline-step-label">Web Research</div>
                     </div>
                     <div class="pipeline-connector"></div>
                     <div class="pipeline-step" data-step="5">
-                        <div class="pipeline-step-icon">🎯</div>
+                        <div class="pipeline-step-icon"><i data-lucide="target"></i></div>
                         <div class="pipeline-step-label">Risk Scoring</div>
                     </div>
                     <div class="pipeline-connector"></div>
                     <div class="pipeline-step" data-step="6">
-                        <div class="pipeline-step-icon">📄</div>
+                        <div class="pipeline-step-icon"><i data-lucide="file-text"></i></div>
                         <div class="pipeline-step-label">CAM Generation</div>
                     </div>
                 </div>
@@ -207,16 +211,17 @@
         <!-- ═══════════════ SECTION: DATA INGESTION ═══════════════ -->
         <section class="content-section" id="section-ingestion">
             <div class="upload-zone" id="uploadZone" ondragover="event.preventDefault(); this.classList.add('dragover')"
-                ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event)">
-                <div class="upload-icon">📁</div>
+                ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event)" data-perm="RUN_PIPELINE">
+                <div class="upload-icon"><i data-lucide="upload-cloud" class="w-12 h-12"></i></div>
                 <h3>Upload Financial Documents</h3>
                 <p>Drag & drop PDFs, Excel, or CSV files — Annual Reports, GST, ITR, Bank Statements</p>
                 <div class="upload-actions">
-                    <label class="btn btn-outline" for="fileInput">Browse Files</label>
+                    <label class="btn btn-outline" for="fileInput"><i data-lucide="search" class="w-4 h-4"></i> Browse
+                        Files</label>
                     <input type="file" id="fileInput" multiple accept=".pdf,.csv,.xlsx,.xls" style="display:none"
                         onchange="handleFileSelect(event)">
                     <button class="btn btn-primary" onclick="runIngestion()" id="btnRunIngestion" disabled>
-                        ✨ Run AI Ingestion
+                        <i data-lucide="zap" class="w-4 h-4"></i> Run AI Ingestion
                     </button>
                 </div>
             </div>
@@ -261,7 +266,8 @@
                         </div>
                     </div>
                     <div class="tech-stack">
-                        <h4>⚡ Tech Stack Used</h4>
+                        <h4><i data-lucide="zap" class="w-4 h-4 inline-block -mt-1 text-yellow-500"></i> Tech Stack Used
+                        </h4>
                         <div class="tech-item"><span class="tech-badge red">PyMuPDF</span> PDF text extraction</div>
                         <div class="tech-item"><span class="tech-badge blue">EasyOCR</span> OCR for scanned docs</div>
                         <div class="tech-item"><span class="tech-badge purple">Groq LLM</span> LLM extraction &
@@ -413,7 +419,8 @@
         <section class="content-section" id="section-users">
             <div class="section-header">
                 <h3 class="section-title">User Management</h3>
-                <button class="btn btn-primary" onclick="showCreateUserModal()">+ Create User</button>
+                <button class="btn btn-primary" onclick="showCreateUserModal()"><i data-lucide="plus"
+                        class="w-4 h-4 mr-1"></i> Create User</button>
             </div>
             <div class="card">
                 <div class="table-wrap">
@@ -441,7 +448,8 @@
         <section class="content-section" id="section-roles">
             <div class="section-header">
                 <h3 class="section-title">Role Hierarchy</h3>
-                <button class="btn btn-primary" onclick="showCreateRoleModal()">+ Create Role</button>
+                <button class="btn btn-primary" onclick="showCreateRoleModal()"><i data-lucide="plus"
+                        class="w-4 h-4 mr-1"></i> Create Role</button>
             </div>
             <p class="section-desc">Drag and drop roles to organize hierarchy. Higher roles (Top) can manage lower roles
                 (Bottom).</p>
@@ -474,14 +482,15 @@
         </div>
     </div>
 
-    <!-- Create User Modal -->
+    <!-- Create / Edit User Modal -->
     <div class="modal-overlay" id="modalCreateUser" style="display:none;">
         <div class="modal">
             <div class="modal-header">
-                <h3>Create New User</h3>
+                <h3 id="modalCreateUserHeader">Create New User</h3>
                 <button class="modal-close" onclick="closeModal('modalCreateUser')">&times;</button>
             </div>
             <div class="modal-body">
+                <input type="hidden" id="inputUserId">
                 <div class="form-group">
                     <label>Full Name</label>
                     <input type="text" id="inputUserFullName" placeholder="John Doe">
@@ -490,7 +499,7 @@
                     <label>Username</label>
                     <input type="text" id="inputUserUsername" placeholder="johndoe">
                 </div>
-                <div class="form-group">
+                <div class="form-group" id="inputUserPasswordGroup">
                     <label>Password</label>
                     <input type="password" id="inputUserPassword" placeholder="••••••••">
                 </div>
@@ -503,19 +512,20 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('modalCreateUser')">Cancel</button>
-                <button class="btn btn-primary" onclick="createUser()">Create User</button>
+                <button class="btn btn-primary" id="btnSubmitUser" onclick="createUser()">Create User</button>
             </div>
         </div>
     </div>
 
-    <!-- Create Role Modal -->
+    <!-- Create / Edit Role Modal -->
     <div class="modal-overlay" id="modalCreateRole" style="display:none;">
         <div class="modal">
             <div class="modal-header">
-                <h3>Create New Role</h3>
+                <h3 id="modalCreateRoleHeader">Create New Role</h3>
                 <button class="modal-close" onclick="closeModal('modalCreateRole')">&times;</button>
             </div>
             <div class="modal-body">
+                <input type="hidden" id="isRoleEdit" value="false">
                 <div class="form-group">
                     <label>Role Name</label>
                     <input type="text" id="inputRoleName" placeholder="e.g. BRANCH_MANAGER">
@@ -533,13 +543,63 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeModal('modalCreateRole')">Cancel</button>
-                <button class="btn btn-primary" onclick="createRole()">Create Role</button>
+                <button class="btn btn-primary" id="btnSubmitRole" onclick="createRole()">Create Role</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ HITL DOCUMENT REVIEW MODAL ═══════════════ -->
+    <div class="modal-overlay" id="modalHitlReview" style="display:none;">
+        <div class="modal modal-lg">
+            <div class="modal-header hitl-header">
+                <div>
+                    <h3><i data-lucide="scan-eye" class="w-5 h-5 inline-block mr-2"></i>AI Document Review</h3>
+                    <p class="hitl-subtitle" id="hitlSubtitle">Please verify the AI-detected document types before
+                        processing continues.</p>
+                </div>
+                <button class="modal-close" onclick="cancelHitlReview()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="hitl-info-bar">
+                    <span><strong>Case:</strong> <span id="hitlCaseId">—</span></span>
+                    <span><strong>Company:</strong> <span id="hitlCompanyName">—</span></span>
+                    <span class="hitl-badge">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        Pipeline paused — awaiting your review
+                    </span>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table hitl-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Filename</th>
+                                <th>File Type</th>
+                                <th>AI Detected Category</th>
+                                <th>Pages</th>
+                                <th>OCR?</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hitlDocsBody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="cancelHitlReview()">
+                    <i data-lucide="x" class="w-4 h-4"></i> Cancel Pipeline
+                </button>
+                <button class="btn btn-primary" onclick="confirmHitlReview()" id="btnConfirmHitl">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i> Confirm & Continue Pipeline
+                </button>
             </div>
         </div>
     </div>
 
     <!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
     <script src="/static/js/dashboard.js"></script>
+    <script>lucide.createIcons();</script>
 </body>
 
 </html>
