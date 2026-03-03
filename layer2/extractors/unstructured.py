@@ -1,154 +1,124 @@
 import os
 import json
-import base64
 import time
-from typing import Dict, Any, List, Optional
+import copy
+from typing import Dict, Any
 from groq import Groq
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from tenacity import retry, wait_exponential, stop_after_attempt
 
-# Simple token estimator to avoid loading heavy tiktoken in hackathons
-def estimate_tokens(text: str) -> int:
-    return len(text.split()) * 1.3 # Rough heuristic for Llama
 
 class GroqRateLimitError(Exception):
+    """Raised when rate limit is hit — signals processor to switch to OCR fallback."""
     pass
+
 
 class GroqExtractor:
     """
-    Handles LLM based extraction with precise rate-limit fallbacks and JSON parsing.
+    Simple LLM extractor:
+    - ONE call per document, full text, exact JSON schema
+    - Raises GroqRateLimitError instead of sleeping so the processor
+      can fall back to EasyOCR immediately
     """
+
     MAX_TPM = 30000
-    
+
     def __init__(self):
         self.api_key = os.getenv("API_KEY", "")
         if not self.api_key:
             print("WARNING: GROQ API_KEY not found in environment.")
         self.client = Groq(api_key=self.api_key)
         self.model = "meta-llama/llama-4-scout-17b-16e-instruct"
-        # Track tokens across instance lifecycle (simplified RPM/TPM state)
-        self.tokens_used_this_minute = 0 
+        self.tokens_used_this_minute = 0
         self.last_reset_time = time.time()
-        
-    def _check_rate_limits(self, estimated_tokens: int) -> bool:
-        """
-        Returns True if safe to proceed, False if we must fallback to EasyOCR to maintain High Latency.
-        """
+
+    def _reset_window_if_due(self):
         now = time.time()
         if now - self.last_reset_time > 60:
             self.tokens_used_this_minute = 0
             self.last_reset_time = now
-            
-        if self.tokens_used_this_minute + estimated_tokens > self.MAX_TPM:
-            print(f"RATE LIMIT ALERT: Skipping Groq. {self.tokens_used_this_minute} + {estimated_tokens} > {self.MAX_TPM}")
-            return False
-            
-        return True
 
-    @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        stop=stop_after_attempt(3),
-        retry=retry_if_exception_type(Exception) # Note: Production code should only catch 429 Http errors here
-    )
-    def _call_groq_text(self, system_prompt: str, text_chunk: str) -> str:
-        
-        estimated = estimate_tokens(system_prompt + text_chunk)
+    def _check_rate_limits(self, estimated_tokens: int) -> bool:
+        self._reset_window_if_due()
+        return self.tokens_used_this_minute + estimated_tokens <= self.MAX_TPM
+
+    def _call_llm(self, system_prompt: str, user_content: str) -> str:
+        estimated = int(len((system_prompt + user_content).split()) * 1.3)
         if not self._check_rate_limits(estimated):
-            raise GroqRateLimitError("TPM Limit Exceeded - Triggering Fallback")
-            
+            raise GroqRateLimitError(
+                f"TPM limit hit — {self.tokens_used_this_minute} used, {estimated} needed"
+            )
+
         completion = self.client.chat.completions.create(
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": text_chunk}
-            ],
-            model=self.model,
-            response_format={"type": "json_object"} # Forces JSON output
-        )
-        
-        # Approximate tokens used based on actual response if API provides it
-        if hasattr(completion, 'usage') and completion.usage:
-             self.tokens_used_this_minute += completion.usage.total_tokens
-        else:
-             self.tokens_used_this_minute += estimated # Fallback
-             
-        return completion.choices[0].message.content
-
-    def _call_groq_vision(self, system_prompt: str, base64_image: str) -> str:
-        """
-        Calls Groq with an image.
-        """
-        estimation = 300 # Vision payloads cost abstract tokens, 300 is safe buffer
-        if not self._check_rate_limits(estimation):
-             raise GroqRateLimitError("TPM Limit Exceeded for Vision - Triggering Fallback")
-             
-        completion = self.client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": system_prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                    ]
-                }
+                {"role": "user", "content": user_content}
             ],
             model=self.model,
             response_format={"type": "json_object"}
         )
-        
+
         if hasattr(completion, 'usage') and completion.usage:
-             self.tokens_used_this_minute += completion.usage.total_tokens
+            self.tokens_used_this_minute += completion.usage.total_tokens
         else:
-             self.tokens_used_this_minute += estimation
-             
+            self.tokens_used_this_minute += estimated
+
         return completion.choices[0].message.content
 
-    def clean_json(self, raw_str: str) -> Dict[str, Any]:
-        """Strip markdown ticks if LLM hallucinated them despite JSON mode"""
-        cleaned = raw_str.replace("```json", "").replace("```", "").strip()
+    def _parse_json(self, raw: str) -> dict:
+        cleaned = raw.replace("```json", "").replace("```", "").strip()
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            return {} # Returning empty dict will trigger Pydantic defaults/nulls perfectly
-
-    def extract_json_schema(self, text: str, target_schema: dict) -> Dict[str, Any]:
-        """
-        Dynamically extracts data matching a specific Pydantic schema structure.
-        Forces the LLM to output exact nulls/empty arrays for missing fields.
-        """
-        schema_str = json.dumps(target_schema, indent=2)
-        
-        prompt = f"""
-        You are an elite financial data extractor building an audit trail.
-        Extract the requested metrics from the user's text.
-        
-        CRITICAL RULES:
-        1. Your output MUST be a valid JSON object.
-        2. Your output MUST EXACTLY match the keys and structure of this TARGET_SCHEMA.
-        3. If a value cannot be found in the text, you MUST output `null` for strings/numbers, or `[]` for lists, exactly as shaped in the TARGET_SCHEMA.
-        4. NEVER hallucinate data. If you are unsure, output `null` or `[]`.
-        
-        TARGET_SCHEMA TO MATCH:
-        {schema_str}
-        """
-        
-        try:
-            raw_response = self._call_groq_text(prompt, text)
-            json_data = self.clean_json(raw_response)
-            
-            # Wrap the pure output in our Metadata layer 
-            wrapped = {}
-            for key, val in json_data.items():
-                # Don't try to wrap nested lists/objects if the schema expects a pure list (like gstr1_monthly_outward_turnover)
-                # We assume the orchestrator will handle the top-level Dict[str, DataPoint] wrapping.
-                wrapped[key] = {
-                    "value": val if val != [] and val is not None else ( [] if isinstance(target_schema.get(key), list) else None ),
-                    "confidence": 0.95 if val else 0.0,
-                    "extraction_method": "groq_llm"
-                }
-            return wrapped
-            
-        except GroqRateLimitError:
-            print("Groq Limit reached: Falling back to RegEx/OCR Engine.")
-            return {} # We return empty, signalling `pipeline.py` to trigger EasyOCR fallback logic
-        except Exception as e:
-            print(f"Extraction failed: {e}")
             return {}
+
+    def extract_and_fill(self, full_text: str, current_json: dict, doc_type_hint: str) -> dict:
+        """
+        Sends the EXACT JSON schema + document text to LLM.
+        LLM fills in null fields, preserves existing values.
+        Raises GroqRateLimitError if TPM limit is hit — processor handles the fallback.
+        """
+        schema_str = json.dumps(current_json, indent=2, default=str)
+
+        prompt = f"""You are a precise Indian financial document data extractor.
+You are processing a {doc_type_hint} document.
+
+Below is a JSON template. Some fields already have values from previous documents — DO NOT CHANGE those.
+
+YOUR TASK:
+1. Read the document text provided by the user.
+2. Fill in any fields that are currently null with data you find in the document.
+3. For list fields that are empty [], add entries if you find relevant data.
+4. PRESERVE all existing non-null values exactly as they are.
+5. Return the COMPLETE JSON with ALL fields.
+
+RULES:
+- All monetary amounts in RUPEES (exact values, not lakhs).
+- Dates in YYYY-MM-DD format.
+- If you cannot find a value, keep it as null.
+- NEVER invent or hallucinate data.
+- Return ONLY the JSON object, nothing else.
+
+JSON TEMPLATE TO FILL:
+{schema_str}"""
+
+        # This may raise GroqRateLimitError — caller handles it
+        raw = self._call_llm(prompt, full_text)
+        result = self._parse_json(raw)
+
+        if not result:
+            print(f"  ⚠ LLM returned empty — keeping current data")
+            return current_json
+
+        # Merge: accept null→value upgrades, protect existing values
+        merged = copy.deepcopy(current_json)
+        for key in merged:
+            if key in result:
+                old_val = merged[key]
+                new_val = result[key]
+                if (old_val is None or old_val == [] or old_val == "") and \
+                   new_val is not None and new_val != [] and new_val != "":
+                    merged[key] = new_val
+                elif isinstance(old_val, list) and isinstance(new_val, list) and len(new_val) > len(old_val):
+                    merged[key] = new_val
+
+        return merged
