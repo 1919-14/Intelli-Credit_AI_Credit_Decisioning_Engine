@@ -123,6 +123,37 @@ function initSocket() {
         closeModal('modalHitlReview');
         showToast('▶ Pipeline resumed — processing Layer 2...');
     });
+
+    // ─── Layer 4 HITL Events ─────────────────────────────────────
+    STATE.socket.on('layer4_hitl_forensics', (data) => {
+        console.log('L4 HITL-1 Forensics:', data);
+        STATE._l4AppId = data.app_id;
+        STATE._l4Hitl1Data = data;
+        renderL4Hitl1Modal(data);
+        document.getElementById('modalL4Hitl1').style.display = 'flex';
+        if (window.lucide) lucide.createIcons();
+        showToast('⏸ Pipeline paused — please review forensic flags', 'warning');
+    });
+
+    STATE.socket.on('layer4_hitl_research', (data) => {
+        console.log('L4 HITL-2 Research:', data);
+        STATE._l4AppId = data.app_id;
+        STATE._l4Hitl2Data = data;
+        renderL4Hitl2Modal(data, 'adverse_media');
+        document.getElementById('modalL4Hitl2').style.display = 'flex';
+        if (window.lucide) lucide.createIcons();
+        showToast('⏸ Pipeline paused — please review research findings', 'warning');
+    });
+
+    STATE.socket.on('layer4_hitl_features', (data) => {
+        console.log('L4 HITL-3 Features:', data);
+        STATE._l4AppId = data.app_id;
+        STATE._l4Hitl3Data = data;
+        renderL4Hitl3Modal(data);
+        document.getElementById('modalL4Hitl3').style.display = 'flex';
+        if (window.lucide) lucide.createIcons();
+        showToast('⏸ Pipeline paused — review feature vector before ML scoring', 'warning');
+    });
 }
 
 // ─── HITL Document Review Functions ─────────────────────────────
@@ -181,6 +212,12 @@ async function confirmHitlReview() {
         });
     });
 
+    // Close HITL modal first
+    closeModal('modalHitlReview');
+
+    // Show officer notes modal — user can submit or skip
+    const officerNotes = await showOfficerNotesModal();
+
     document.getElementById('btnConfirmHitl').disabled = true;
     document.getElementById('btnConfirmHitl').textContent = 'Processing...';
 
@@ -188,7 +225,7 @@ async function confirmHitlReview() {
         const res = await fetch(`/api/applications/${appId}/confirm_docs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ documents: docs })
+            body: JSON.stringify({ documents: docs, officer_notes: officerNotes })
         });
         const result = await res.json();
         if (result.error) {
@@ -197,8 +234,7 @@ async function confirmHitlReview() {
             document.getElementById('btnConfirmHitl').textContent = 'Confirm & Continue Pipeline';
             return;
         }
-        showToast('✅ Documents confirmed — pipeline resuming');
-        closeModal('modalHitlReview');
+        showToast('✅ Documents confirmed — pipeline resuming' + (officerNotes ? ' (with officer notes)' : ''));
     } catch (e) {
         showToast('❌ Failed to confirm documents');
         document.getElementById('btnConfirmHitl').disabled = false;
@@ -483,6 +519,12 @@ async function loadApplicationData(appId) {
         // Populate Financial Analysis if layer2_output exists
         if (data.layer2_output) {
             populateFinancialView(data.layer2_output);
+        }
+
+        // Populate Web Research & Anomaly Detection if layer4_output exists
+        if (data.layer4_output) {
+            populateResearchView(data.layer4_output);
+            populateAnomalyView(data.layer4_output);
         }
     } catch (e) {
         console.error('Failed to load application data', e);
@@ -990,4 +1032,785 @@ function showToast(msg) {
     toast.textContent = msg;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
+}
+
+
+// ─── LAYER 4: Web Research Rendering ─────────────────────────────
+function populateResearchView(l4) {
+    const research = l4.research_findings || {};
+    const el = document.getElementById('researchSummaryContent');
+    if (!el) return;
+
+    // Summary card
+    const report = l4.forensics_report || {};
+    el.innerHTML = `
+        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;">
+            <div style="text-align:center;padding:0.5rem 1.5rem;background:rgba(239,68,68,0.15);border-radius:8px;">
+                <div style="font-size:1.8rem;font-weight:700;color:#ef4444;">${report.red_flag_count || 0}</div>
+                <div style="font-size:0.75rem;color:#ef4444;">RED Alerts</div>
+            </div>
+            <div style="text-align:center;padding:0.5rem 1.5rem;background:rgba(245,158,11,0.15);border-radius:8px;">
+                <div style="font-size:1.8rem;font-weight:700;color:#f59e0b;">${report.amber_flag_count || 0}</div>
+                <div style="font-size:0.75rem;color:#f59e0b;">AMBER Alerts</div>
+            </div>
+            <div style="text-align:center;padding:0.5rem 1.5rem;background:rgba(16,185,129,0.15);border-radius:8px;">
+                <div style="font-size:1.8rem;font-weight:700;color:#10b981;">${report.green_flag_count || 0}</div>
+                <div style="font-size:0.75rem;color:#10b981;">GREEN Signals</div>
+            </div>
+            <div style="flex:1;text-align:right;font-size:0.85rem;color:var(--text-secondary);">
+                Overall fraud risk: <strong style="color:${report.overall_fraud_risk === 'RED' ? '#ef4444' : report.overall_fraud_risk === 'AMBER' ? '#f59e0b' : '#10b981'}">${report.overall_fraud_risk || '—'}</strong>
+                 | Score penalty: <strong>${report.total_score_penalty || 0}</strong>
+            </div>
+        </div>`;
+
+    // C1: Adverse Media
+    _renderResearchCard('researchAdverseCard', 'adverseMediaSummary', 'adverseMediaSnippets', research.adverse_media);
+
+    // C2: Litigation
+    _renderLitigationCard(research.litigation);
+
+    // C3: Sector Risk
+    _renderSectorCard(research.sector_risk);
+
+    // D1-D2: MCA
+    _renderMcaCard(research.mca_checks);
+
+    // E1: CIBIL
+    _renderCibilCard(research.cibil);
+
+    // Raw snippets
+    _renderRawSnippets(research);
+}
+
+function _severityBadge(severity) {
+    const colors = { RED: '#ef4444', AMBER: '#f59e0b', GREEN: '#10b981', INFO: '#64748b' };
+    const color = colors[severity] || '#64748b';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;background:${color}22;color:${color};border:1px solid ${color}44;">${severity}</span>`;
+}
+
+function _renderResearchCard(cardId, summaryId, snippetsId, data) {
+    if (!data) return;
+    document.getElementById(cardId).style.display = '';
+    const summary = document.getElementById(summaryId);
+    const snippets = document.getElementById(snippetsId);
+
+    const flag = data.negative_news_flag ? '⚠️ Negative media found' : '✅ No adverse media detected';
+    const sentiment = data.sentiment_score !== undefined ? `Sentiment: ${data.sentiment_score > 0 ? '🟢' : data.sentiment_score < 0 ? '🔴' : '🟡'} ${data.sentiment_score}` : '';
+
+    summary.innerHTML = `
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
+            <div style="font-weight:600;">${flag}</div>
+            <div style="font-size:0.85rem;color:var(--text-secondary);">${sentiment}</div>
+            ${data.risk_category ? `<div>Category: <strong>${data.risk_category}</strong></div>` : ''}
+        </div>
+        ${data.summary ? `<p style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.9rem;">${data.summary}</p>` : ''}
+        ${(data.alerts || []).map(a => `<div style="margin-top:0.3rem;">${_severityBadge(a.severity)} ${a.description}</div>`).join('')}`;
+
+    const rawSnippets = data.raw_snippets || data.adverse_snippets || [];
+    if (rawSnippets.length) {
+        snippets.innerHTML = `<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.5rem;">Sources (${rawSnippets.length} results):</div>` +
+            rawSnippets.map(s => `<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:0.6rem;margin-bottom:0.5rem;">
+                <a href="${s.url}" target="_blank" style="color:var(--accent);font-size:0.85rem;text-decoration:none;">${s.title || s.url}</a>
+                <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.3rem;">${(s.content || s.concern || '').substring(0, 150)}...</p>
+            </div>`).join('');
+    }
+}
+
+function _renderLitigationCard(data) {
+    if (!data) return;
+    document.getElementById('researchLitigationCard').style.display = '';
+    const summary = document.getElementById('litigationSummary');
+    const cases = document.getElementById('litigationCases');
+
+    summary.innerHTML = `
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
+            <div>Active cases: <strong>${data.litigation_count || 0}</strong></div>
+            <div>Risk: <strong style="color:${data.litigation_risk === 'High' ? '#ef4444' : data.litigation_risk === 'Moderate' ? '#f59e0b' : '#10b981'}">${data.litigation_risk || 'Low'}</strong></div>
+            ${data.total_exposure_lakhs ? `<div>Exposure: <strong>₹${data.total_exposure_lakhs}L</strong></div>` : ''}
+        </div>
+        ${data.summary ? `<p style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.9rem;">${data.summary}</p>` : ''}
+        ${(data.alerts || []).map(a => `<div style="margin-top:0.3rem;">${_severityBadge(a.severity)} ${a.description}</div>`).join('')}`;
+
+    const caseList = data.cases || [];
+    if (caseList.length) {
+        cases.innerHTML = `<table class="data-table"><thead><tr><th>Type</th><th>Severity</th><th>Status</th><th>Summary</th></tr></thead><tbody>` +
+            caseList.map(c => `<tr><td>${c.case_type || '—'}</td><td>${_severityBadge(c.severity || 'Low')}</td><td>${c.case_status || '—'}</td><td>${c.summary || '—'}</td></tr>`).join('') +
+            `</tbody></table>`;
+    }
+}
+
+function _renderSectorCard(data) {
+    if (!data) return;
+    document.getElementById('researchSectorCard').style.display = '';
+    document.getElementById('sectorRiskSummary').innerHTML = `
+        <div style="display:flex;gap:1rem;align-items:center;">
+            <div>Sector: <strong>${data.sector || '—'}</strong></div>
+            <div>Risk Score: <strong style="color:${data.sector_risk_score > 0.7 ? '#ef4444' : data.sector_risk_score > 0.4 ? '#f59e0b' : '#10b981'}">${(data.sector_risk_score || 0).toFixed(2)}</strong></div>
+            ${data.rbi_sector_flag ? '<div style="color:#ef4444;font-weight:600;">⚠ RBI Sector Caution</div>' : ''}
+        </div>
+        ${data.summary ? `<p style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.9rem;">${data.summary}</p>` : ''}`;
+
+    document.getElementById('sectorHeadwinds').innerHTML = `<div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:1rem;"><strong style="color:#ef4444;">⬇ Headwinds</strong><ul style="margin:0.5rem 0 0 1rem;font-size:0.85rem;">${(data.headwinds || []).map(h => `<li>${h}</li>`).join('')}</ul></div>`;
+    document.getElementById('sectorTailwinds').innerHTML = `<div style="background:rgba(16,185,129,0.1);border-radius:8px;padding:1rem;"><strong style="color:#10b981;">⬆ Tailwinds</strong><ul style="margin:0.5rem 0 0 1rem;font-size:0.85rem;">${(data.tailwinds || []).map(t => `<li>${t}</li>`).join('')}</ul></div>`;
+}
+
+function _renderMcaCard(data) {
+    if (!data) return;
+    document.getElementById('researchMcaCard').style.display = '';
+    document.getElementById('mcaSummary').innerHTML = `
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
+            <div>Status: <strong style="color:${data.company_status === 'Active' ? '#10b981' : '#ef4444'}">${data.company_status || 'Unknown'}</strong></div>
+            <div>Charges: <strong>${data.mca_charge_count || 0}</strong></div>
+            <div>DIN Score: <strong>${data.promoter_din_score || '—'}</strong></div>
+        </div>
+        ${data.summary ? `<p style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.9rem;">${data.summary}</p>` : ''}
+        ${(data.alerts || []).map(a => `<div style="margin-top:0.3rem;">${_severityBadge(a.severity)} ${a.description}</div>`).join('')}`;
+
+    const dirs = data.directors || [];
+    if (dirs.length) {
+        document.getElementById('mcaDetails').innerHTML = `<table class="data-table"><thead><tr><th>Director</th><th>DIN</th><th>Status</th></tr></thead><tbody>` +
+            dirs.map(d => `<tr><td>${d.name || '—'}</td><td>${d.din || '—'}</td><td style="color:${d.status === 'Active' ? '#10b981' : '#ef4444'}">${d.status || '—'}</td></tr>`).join('') +
+            `</tbody></table>`;
+    }
+}
+
+function _renderCibilCard(data) {
+    if (!data) return;
+    document.getElementById('researchCibilCard').style.display = '';
+    document.getElementById('cibilSummary').innerHTML = `
+        ${data.simulated ? '<div style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:0.5rem;margin-bottom:0.5rem;font-size:0.8rem;color:#f59e0b;">⚠ SIMULATED — Real CIBIL Commercial requires TransUnion data-sharing agreement</div>' : ''}
+        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;">
+            <div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;">${data.cibil_rank || '—'}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Rank</div></div>
+            <div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;">${data.cibil_score || '—'}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Score</div></div>
+            <div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;">${data.total_live_facilities || 0}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Live Facilities</div></div>
+            <div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;color:${data.npa_flag ? '#ef4444' : '#10b981'}">${data.npa_flag ? 'YES' : 'NO'}</div><div style="font-size:0.7rem;color:var(--text-secondary);">NPA</div></div>
+            <div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;">${data.highest_dpd_days || 0}d</div><div style="font-size:0.7rem;color:var(--text-secondary);">Highest DPD</div></div>
+            <div style="text-align:center;"><div style="font-size:1.5rem;font-weight:700;">${data.enquiry_count_6m || 0}</div><div style="font-size:0.7rem;color:var(--text-secondary);">Enquiries (6m)</div></div>
+        </div>
+        ${data.summary ? `<p style="margin-top:0.5rem;color:var(--text-secondary);font-size:0.9rem;">${data.summary}</p>` : ''}`;
+}
+
+function _renderRawSnippets(research) {
+    let allSnippets = [];
+    for (const [key, val] of Object.entries(research)) {
+        if (val && val.raw_snippets) {
+            allSnippets = allSnippets.concat(val.raw_snippets.map(s => ({ ...s, source: key })));
+        }
+    }
+    if (!allSnippets.length) return;
+    document.getElementById('researchRawCard').style.display = '';
+    document.getElementById('rawSearchResults').innerHTML = allSnippets.map(s => `
+        <div style="border-bottom:1px solid var(--border);padding:0.5rem 0;">
+            <div style="font-size:0.75rem;color:var(--text-secondary);">[${s.source}] ${s.query || ''}</div>
+            <a href="${s.url}" target="_blank" style="color:var(--accent);font-size:0.85rem;">${s.title}</a>
+            <p style="font-size:0.8rem;color:var(--text-secondary);margin:0;">${(s.content || '').substring(0, 120)}</p>
+        </div>`).join('');
+}
+
+
+// ─── LAYER 4: Anomaly Detection Rendering ────────────────────────
+function populateAnomalyView(l4) {
+    const report = l4.forensics_report || {};
+    const el = document.getElementById('forensicsSummaryContent');
+    if (!el) return;
+
+    // Summary
+    const overall = report.overall_fraud_risk || 'N/A';
+    const overallColor = overall === 'RED' ? '#ef4444' : overall === 'AMBER' ? '#f59e0b' : '#10b981';
+    el.innerHTML = `
+        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;">
+            <div style="font-size:1.2rem;font-weight:700;color:${overallColor};">Overall: ${overall}</div>
+            <div style="font-size:0.9rem;">${report.total_alerts || 0} total alerts | Penalty: <strong>${report.total_score_penalty || 0}</strong></div>
+        </div>`;
+
+    // Alert cards grid
+    const grid = document.getElementById('alertCardsGrid');
+    const allAlerts = report.alerts || [];
+    grid.innerHTML = allAlerts.filter(a => a.severity !== 'INFO' && a.severity !== 'GREEN').map(a => {
+        const c = a.severity === 'RED' ? '#ef4444' : '#f59e0b';
+        return `<div style="background:${c}11;border:1px solid ${c}33;border-radius:10px;padding:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <span style="font-weight:600;font-size:0.85rem;">${a.type?.replace(/_/g, ' ') || 'Alert'}</span>
+                ${_severityBadge(a.severity)}
+            </div>
+            <p style="font-size:0.85rem;color:var(--text-secondary);margin:0;">${a.description}</p>
+            <div style="font-size:0.7rem;color:var(--text-secondary);margin-top:0.5rem;">Source: ${a.source || '—'} | Penalty: ${a.score_penalty || 0}</div>
+        </div>`;
+    }).join('');
+
+    // GST Forensics
+    const gst = l4.gst_forensics || {};
+    if (Object.keys(gst).length) {
+        document.getElementById('gstForensicsCard').style.display = '';
+        let gstRows = '';
+        const a1 = gst.a1_reconciliation || {};
+        if (a1.revenue_gst_alignment !== null && a1.revenue_gst_alignment !== undefined) {
+            gstRows += `<tr><td>Revenue-GST Alignment</td><td>${a1.revenue_gst_alignment}</td><td>Correlation: ${a1.correlation || '—'}</td></tr>`;
+            gstRows += `<tr><td>GST Mismatch Ratio</td><td>${a1.gst_mismatch_ratio}%</td><td>${a1.gst_mismatch_ratio > 20 ? '⚠ High gap' : '✅ Within range'}</td></tr>`;
+        }
+        const a2 = gst.a2_itc_mismatch || {};
+        if (a2.gst_2a_vs_3b_gap_pct !== null && a2.gst_2a_vs_3b_gap_pct !== undefined) {
+            gstRows += `<tr><td>ITC 2A vs 3B Gap</td><td>${a2.gst_2a_vs_3b_gap_pct}%</td><td>${a2.itc_mismatch_flag ? '⚠ Overclaimed' : '✅ Conservative'}</td></tr>`;
+            gstRows += `<tr><td>Months Overclaimed</td><td>${a2.months_overclaimed || 0}</td><td>${a2.months_overclaimed > 3 ? '⚠ Pattern detected' : '—'}</td></tr>`;
+        }
+        const a3 = gst.a3_circular_trading || {};
+        gstRows += `<tr><td>Circular Trading Ratio</td><td>${a3.circular_trading_ratio || 0}%</td><td>${a3.circular_volume_lakhs ? `₹${a3.circular_volume_lakhs}L detected` : 'None detected'}</td></tr>`;
+        const a4 = gst.a4_filing_compliance || {};
+        if (a4.gst_compliance_score !== null && a4.gst_compliance_score !== undefined) {
+            gstRows += `<tr><td>Filing Compliance</td><td>${(a4.gst_compliance_score * 100).toFixed(0)}%</td><td>${a4.on_time_filings || 0}/${a4.total_filings || 0} on-time</td></tr>`;
+        }
+        document.getElementById('gstForensicsContent').innerHTML = `<table class="data-table"><thead><tr><th>Check</th><th>Value</th><th>Assessment</th></tr></thead><tbody>${gstRows}</tbody></table>`;
+    }
+
+    // Bank Forensics
+    const bankF = l4.bank_forensics || {};
+    if (Object.keys(bankF).length) {
+        document.getElementById('bankForensicsCard').style.display = '';
+        let bankRows = '';
+        const b1 = bankF.b1_cheque_bounces || {};
+        bankRows += `<tr><td>Cheque Bounces</td><td>${b1.bounce_count || 0}</td><td>₹${b1.bounce_amount_total_lakhs || 0}L total</td></tr>`;
+        bankRows += `<tr><td>Bounce Frequency</td><td>${b1.cheque_bounce_frequency || 0}/month</td><td>${b1.insufficient_funds_bounces ? '⚠ Insufficient funds' : '—'}</td></tr>`;
+        const b2 = bankF.b2_od_utilisation || {};
+        if (b2.bank_od_utilisation_pct !== null && b2.bank_od_utilisation_pct !== undefined) {
+            bankRows += `<tr><td>OD Utilisation</td><td>${b2.bank_od_utilisation_pct}%</td><td>${b2.bank_od_utilisation_pct > 85 ? '🔴 Stressed' : b2.bank_od_utilisation_pct > 70 ? '🟡 High' : '🟢 OK'}</td></tr>`;
+            bankRows += `<tr><td>Utilisation Volatility</td><td>${b2.cc_utilisation_volatility}%</td><td>${b2.months_near_limit || 0} months near limit</td></tr>`;
+        }
+        const b3 = bankF.b3_cash_flow || {};
+        if (b3.cash_deposit_ratio !== null) {
+            bankRows += `<tr><td>Cash Deposit Ratio</td><td>${b3.cash_deposit_ratio}%</td><td>${b3.cash_deposit_ratio > 30 ? '🔴 Cash-heavy' : '✅ Normal'}</td></tr>`;
+            bankRows += `<tr><td>EMI-to-Credit Ratio</td><td>${b3.emi_to_credit_ratio || 0}%</td><td>${b3.months_negative_flow || 0} negative months</td></tr>`;
+        }
+        document.getElementById('bankForensicsContent').innerHTML = `<table class="data-table"><thead><tr><th>Check</th><th>Value</th><th>Assessment</th></tr></thead><tbody>${bankRows}</tbody></table>`;
+    }
+
+    // Officer Before/After
+    const adjustment = l4.officer_adjustment_explanation || {};
+    const changes = adjustment.changes || {};
+    const preFeatures = l4.pre_officer_features || {};
+    const postFeatures = l4.feature_vector || {};
+    const officerAnalysis = l4.officer_analysis || {};
+
+    // Show officer comparison if officer notes were provided
+    if (officerAnalysis.summary || Object.keys(changes).length || Object.keys(preFeatures).length) {
+        document.getElementById('officerCompareCard').style.display = '';
+        const explanations = adjustment.explanations || {};
+
+        let html = '';
+
+        // Officer summary
+        if (officerAnalysis.summary) {
+            html += `<div style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+                <strong>📋 Officer Assessment:</strong> ${officerAnalysis.summary}
+            </div>`;
+        }
+
+        // Overall impact
+        if (adjustment.overall_impact) {
+            html += `<p style="margin-bottom:1rem;color:var(--text-secondary);font-style:italic;">🔄 ${adjustment.overall_impact}</p>`;
+        }
+
+        // Build comparison table — focus on officer-influenced features
+        const officerFeatures = ['factory_operational_flag', 'capacity_utilisation_pct', 'succession_risk_flag',
+            'management_stability_score', 'working_capital_cycle_days'];
+        let compareRows = '';
+
+        // First show features that actually changed
+        for (const [key, vals] of Object.entries(changes)) {
+            const explanation = explanations[key] || 'Updated based on officer site-visit assessment';
+            const changed = vals.before !== vals.after;
+            compareRows += `<tr style="${changed ? 'background:rgba(245,158,11,0.1);' : ''}">
+                <td><strong>${key.replace(/_/g, ' ')}</strong></td>
+                <td>${typeof vals.before === 'number' ? vals.before.toFixed(2) : vals.before}</td>
+                <td style="${changed ? 'color:#f59e0b;font-weight:600;' : ''}">${typeof vals.after === 'number' ? vals.after.toFixed(2) : vals.after}</td>
+                <td style="font-size:0.85rem;color:var(--text-secondary);">${explanation}</td>
+            </tr>`;
+        }
+
+        // Then show officer features that didn't change (for completeness)
+        if (Object.keys(preFeatures).length && Object.keys(changes).length === 0) {
+            for (const feat of officerFeatures) {
+                const pre = preFeatures[feat];
+                const post = postFeatures[feat];
+                if (pre !== undefined) {
+                    const changed = pre !== post;
+                    compareRows += `<tr style="${changed ? 'background:rgba(245,158,11,0.1);' : ''}">
+                        <td><strong>${feat.replace(/_/g, ' ')}</strong></td>
+                        <td>${typeof pre === 'number' ? pre.toFixed(2) : pre}</td>
+                        <td style="${changed ? 'color:#f59e0b;font-weight:600;' : ''}">${typeof post === 'number' ? post.toFixed(2) : post}</td>
+                        <td style="font-size:0.85rem;color:var(--text-secondary);">${changed ? 'Changed by officer assessment' : 'No change — default retained'}</td>
+                    </tr>`;
+                }
+            }
+        }
+
+        if (compareRows) {
+            html += `<table class="data-table"><thead><tr><th>Feature</th><th>Before Officer Notes</th><th>After Officer Notes</th><th>AI Explanation</th></tr></thead><tbody>${compareRows}</tbody></table>`;
+        } else if (!officerAnalysis.summary) {
+            html += `<div class="empty-state">No officer notes were provided — using default values for qualitative features.</div>`;
+        } else {
+            html += `<div style="color:var(--text-secondary);font-size:0.9rem;">✅ Officer notes were processed but no feature values changed from defaults.</div>`;
+        }
+
+        // Key observations from officer
+        if (officerAnalysis.key_observations && officerAnalysis.key_observations.length) {
+            html += `<div style="margin-top:1rem;"><strong>Key Observations:</strong><ul style="margin:0.5rem 0 0 1rem;font-size:0.9rem;">`;
+            for (const obs of officerAnalysis.key_observations) {
+                html += `<li>${obs}</li>`;
+            }
+            html += `</ul></div>`;
+        }
+
+        // Risk and positive factors
+        if (officerAnalysis.risk_factors && officerAnalysis.risk_factors.length) {
+            html += `<div style="margin-top:0.5rem;"><strong style="color:#ef4444;">Risk Factors:</strong><ul style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">`;
+            for (const rf of officerAnalysis.risk_factors) {
+                html += `<li style="color:#ef4444;">${rf}</li>`;
+            }
+            html += `</ul></div>`;
+        }
+        if (officerAnalysis.positive_factors && officerAnalysis.positive_factors.length) {
+            html += `<div style="margin-top:0.5rem;"><strong style="color:#10b981;">Positive Factors:</strong><ul style="margin:0.3rem 0 0 1rem;font-size:0.85rem;">`;
+            for (const pf of officerAnalysis.positive_factors) {
+                html += `<li style="color:#10b981;">${pf}</li>`;
+            }
+            html += `</ul></div>`;
+        }
+
+        document.getElementById('officerCompareContent').innerHTML = html;
+    }
+
+    // Feature Vector
+    const features = l4.feature_vector || {};
+    const sources = l4.feature_audit_snapshot?.feature_sources || {};
+    if (Object.keys(features).length) {
+        document.getElementById('featureVectorCard').style.display = '';
+        const tbody = document.getElementById('featureVectorBody');
+        tbody.innerHTML = Object.entries(features).map(([key, val]) => {
+            const displayVal = typeof val === 'number' ? val.toFixed(val % 1 === 0 ? 0 : 2) : String(val);
+            return `<tr><td><strong>${key.replace(/_/g, ' ')}</strong></td><td>${displayVal}</td><td style="font-size:0.8rem;color:var(--text-secondary);">${sources[key] || '—'}</td></tr>`;
+        }).join('');
+    }
+
+    // HITL Audit Trail
+    const auditTrail = l4.hitl_audit_trail || [];
+    const hitlDismissed = l4.hitl1_dismissed_alerts || [];
+    if (auditTrail.length) {
+        let auditHtml = `<div class="card" style="margin-top:1.5rem;">
+            <div class="card-header">
+                <span class="card-icon" style="background:rgba(139,92,246,0.2);">📋</span>
+                <div>
+                    <h3>HITL Governance Audit Trail</h3>
+                    <p style="color:var(--text-secondary);font-size:0.8rem;">${auditTrail.length} recorded decisions — shown in CAM &amp; Layer 7-8 governance</p>
+                </div>
+            </div>
+            <table class="data-table">
+                <thead><tr>
+                    <th>Stage</th><th>Action</th><th>Item</th>
+                    <th>Before</th><th>After</th><th>Officer Reason</th><th>When</th>
+                </tr></thead>
+                <tbody>`;
+
+        auditTrail.forEach(entry => {
+            const actionColor = {
+                'DISMISS_ALERT': '#ef4444',
+                'DISMISS_FINDING': '#f59e0b',
+                'OVERRIDE_FEATURE': '#8b5cf6',
+                'CONFIRM_ALERT': '#10b981',
+            }[entry.action] || '#6b7280';
+
+            const actionLabel = entry.action.replace(/_/g, ' ');
+            const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('en-IN') : '—';
+            const before = entry.original_value !== null && entry.original_value !== undefined ? String(entry.original_value).substring(0, 20) : '—';
+            const after = entry.new_value !== null && entry.new_value !== undefined ? String(entry.new_value).substring(0, 20) : '—';
+
+            auditHtml += `<tr style="${entry.action.startsWith('DISMISS') || entry.action === 'OVERRIDE_FEATURE' ? 'background:rgba(139,92,246,0.05);' : ''}">
+                <td><span style="background:#374151;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.75rem;">HITL-${entry.hitl_stage}</span></td>
+                <td><span style="color:${actionColor};font-size:0.8rem;font-weight:600;">${actionLabel}</span></td>
+                <td style="font-size:0.8rem;font-family:monospace;">${entry.item_id}</td>
+                <td style="font-size:0.8rem;">${before}</td>
+                <td style="font-size:0.8rem;font-weight:600;color:${entry.action.startsWith('DISMISS') ? '#ef4444' : '#8b5cf6'};">${after}</td>
+                <td style="font-size:0.8rem;color:var(--text-secondary);">${entry.reason || '—'}</td>
+                <td style="font-size:0.75rem;color:var(--text-secondary);">${ts}</td>
+            </tr>`;
+        });
+
+        auditHtml += `</tbody></table></div>`;
+
+        // Inject after feature vector
+        const fvCard = document.getElementById('featureVectorCard');
+        if (fvCard) {
+            const auditDiv = document.createElement('div');
+            auditDiv.id = 'hitlAuditTrailSection';
+            auditDiv.innerHTML = auditHtml;
+            fvCard.after(auditDiv);
+        }
+    }
+}
+
+
+// ─── Officer Notes Modal Handlers ────────────────────────────────
+let _officerNotesResolve = null;
+
+function showOfficerNotesModal() {
+    document.getElementById('officerNotesText').value = '';
+    document.getElementById('modalOfficerNotes').style.display = 'flex';
+    lucide.createIcons();
+    return new Promise(resolve => { _officerNotesResolve = resolve; });
+}
+
+function skipOfficerNotes() {
+    document.getElementById('modalOfficerNotes').style.display = 'none';
+    if (_officerNotesResolve) {
+        _officerNotesResolve('');
+        _officerNotesResolve = null;
+    }
+}
+
+function submitWithOfficerNotes() {
+    const notes = document.getElementById('officerNotesText').value.trim();
+    document.getElementById('modalOfficerNotes').style.display = 'none';
+    if (_officerNotesResolve) {
+        _officerNotesResolve(notes);
+        _officerNotesResolve = null;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER 4 HITL-1: Forensic Flag Review
+// ═══════════════════════════════════════════════════════════
+
+function renderL4Hitl1Modal(data) {
+    const alerts = data.alerts || [];
+    const container = document.getElementById('hitl1AlertsContainer');
+
+    if (!alerts.length) {
+        container.innerHTML = `<div class="empty-state" style="padding:2rem;">
+            ✅ No RED or AMBER forensic flags detected — pipeline will continue automatically.
+        </div>`;
+        return;
+    }
+
+    let html = `<div style="margin-bottom:0.5rem;color:var(--text-secondary);font-size:0.85rem;">
+        ${data.red} RED flags &nbsp;|&nbsp; ${data.amber} AMBER flags &nbsp;|&nbsp; ${data.total} total alerts
+    </div>`;
+
+    alerts.forEach(alert => {
+        const sevColor = alert.severity === 'RED' ? '#ef4444' : '#f59e0b';
+        const sevBg = alert.severity === 'RED' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)';
+        html += `<div id="hitl1_card_${alert.alert_id}" style="border:1px solid ${sevColor};border-radius:8px;padding:1rem;margin-bottom:0.75rem;background:${sevBg};">
+            <div style="display:flex;align-items:flex-start;gap:0.75rem;">
+                <div style="flex:1;">
+                    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.25rem;">
+                        <span style="background:${sevColor};color:#fff;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-weight:700;">${alert.severity}</span>
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">${alert.alert_id}</span>
+                        <span style="font-size:0.8rem;color:${sevColor};font-weight:600;">Penalty: ${alert.score_penalty || 0}</span>
+                    </div>
+                    <div style="font-weight:600;margin-bottom:0.25rem;">${alert.type?.replace(/_/g, ' ')}</div>
+                    <div style="font-size:0.85rem;color:var(--text-secondary);">${alert.description}</div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.2rem;">Source: ${alert.source || '—'}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:0.4rem;min-width:90px;text-align:right;">
+                    <label style="display:flex;align-items:center;gap:0.3rem;justify-content:flex-end;cursor:pointer;">
+                        <input type="radio" name="hitl1_${alert.alert_id}" value="keep" checked
+                               onchange="toggleHitl1Reason('${alert.alert_id}', false)"> Keep
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.3rem;justify-content:flex-end;cursor:pointer;">
+                        <input type="radio" name="hitl1_${alert.alert_id}" value="dismiss"
+                               onchange="toggleHitl1Reason('${alert.alert_id}', true)"> Dismiss
+                    </label>
+                </div>
+            </div>
+            <div id="hitl1_reason_${alert.alert_id}" style="display:none;margin-top:0.5rem;">
+                <input type="text" id="hitl1_reason_input_${alert.alert_id}"
+                       placeholder="Reason for dismissal (required for CAM audit trail)..."
+                       style="width:100%;padding:0.5rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.85rem;">
+            </div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+}
+
+function toggleHitl1Reason(alertId, show) {
+    const el = document.getElementById(`hitl1_reason_${alertId}`);
+    if (el) el.style.display = show ? 'block' : 'none';
+}
+
+async function submitL4Hitl1() {
+    const appId = STATE._l4AppId;
+    const alerts = (STATE._l4Hitl1Data?.alerts || []);
+    const dismissedIds = [];
+    const dismissReasons = {};
+
+    for (const alert of alerts) {
+        const aid = alert.alert_id;
+        const selected = document.querySelector(`input[name="hitl1_${aid}"]:checked`);
+        if (selected?.value === 'dismiss') {
+            const reason = document.getElementById(`hitl1_reason_input_${aid}`)?.value?.trim();
+            if (!reason) {
+                showToast(`❌ Reason required for dismissing alert ${aid}`);
+                return;
+            }
+            dismissedIds.push(aid);
+            dismissReasons[aid] = reason;
+        }
+    }
+
+    document.getElementById('btnSubmitHitl1').disabled = true;
+    document.getElementById('btnSubmitHitl1').textContent = 'Submitting...';
+
+    try {
+        await fetch(`/api/applications/${appId}/layer4_hitl_1`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dismissed_alert_ids: dismissedIds, dismiss_reasons: dismissReasons })
+        });
+        document.getElementById('modalL4Hitl1').style.display = 'none';
+        showToast(`✅ HITL-1 submitted — ${dismissedIds.length} alerts dismissed`);
+    } catch (e) {
+        showToast('❌ Failed to submit HITL-1');
+        document.getElementById('btnSubmitHitl1').disabled = false;
+        document.getElementById('btnSubmitHitl1').textContent = 'Submit Review & Continue';
+    }
+}
+
+async function skipL4Hitl1() {
+    const appId = STATE._l4AppId;
+    document.getElementById('modalL4Hitl1').style.display = 'none';
+    await fetch(`/api/applications/${appId}/layer4_hitl_1`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dismissed_alert_ids: [], dismiss_reasons: {} })
+    });
+    showToast('⏩ HITL-1 skipped — all forensic flags accepted');
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// LAYER 4 HITL-2: Web Research Review
+// ═══════════════════════════════════════════════════════════
+
+let _hitl2ActiveTab = 'adverse_media';
+
+function showHitl2Tab(tab) {
+    _hitl2ActiveTab = tab;
+    ['adverse_media', 'litigation', 'mca_checks'].forEach(t => {
+        const btn = document.getElementById(`htab_${t}`);
+        if (btn) btn.style.fontWeight = t === tab ? '700' : '400';
+    });
+    if (STATE._l4Hitl2Data) renderL4Hitl2Modal(STATE._l4Hitl2Data, tab);
+}
+
+function renderL4Hitl2Modal(data, tab = 'adverse_media') {
+    _hitl2ActiveTab = tab;
+    ['adverse_media', 'litigation', 'mca_checks'].forEach(t => {
+        const btn = document.getElementById(`htab_${t}`);
+        if (btn) btn.style.fontWeight = t === tab ? '700' : '400';
+    });
+
+    const container = document.getElementById('hitl2FindingsContainer');
+    const blockData = (data.research_findings || {})[tab] || {};
+    const snippets = blockData.raw_snippets || blockData.cases || blockData.findings || [];
+    const alerts = blockData.alerts || [];
+
+    if (!snippets.length && !alerts.length) {
+        container.innerHTML = `<div class="empty-state" style="padding:2rem;">No findings from this source — nothing to review.</div>`;
+        return;
+    }
+
+    const sevColor = (s) => s === 'RED' ? '#ef4444' : s === 'AMBER' ? '#f59e0b' : '#10b981';
+
+    let html = '';
+    // Show alerts first
+    alerts.forEach((alert, i) => {
+        const fid = alert.finding_id || `${tab}_alert_${i}`;
+        html += `<div style="border:1px solid ${sevColor(alert.severity)};border-radius:8px;padding:0.85rem;margin-bottom:0.6rem;background:rgba(0,0,0,0.2);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div style="flex:1;">
+                    <span style="background:${sevColor(alert.severity)};color:#fff;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;">${alert.severity}</span>
+                    <span style="margin-left:0.5rem;font-weight:600;font-size:0.9rem;">${alert.type?.replace(/_/g, ' ') || 'Finding'}</span>
+                    <p style="margin:0.3rem 0 0.2rem;font-size:0.85rem;color:var(--text-secondary);">${alert.description || ''}</p>
+                    ${alert.source_url ? `<a href="${alert.source_url}" target="_blank" style="font-size:0.75rem;color:var(--accent-blue);">🔗 ${alert.source_url.substring(0, 60)}...</a>` : ''}
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-left:1rem;white-space:nowrap;">
+                    <label style="display:flex;align-items:center;gap:0.25rem;cursor:pointer;">
+                        <input type="radio" name="hitl2_${tab}_${fid}" value="KEEP" checked> Keep
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.25rem;cursor:pointer;">
+                        <input type="radio" name="hitl2_${tab}_${fid}" value="DISMISS"
+                               onchange="toggleHitl2Reason('${tab}_${fid}', true)"
+                               onfocus="toggleHitl2Reason('${tab}_${fid}', true)"> Dismiss
+                    </label>
+                </div>
+            </div>
+            <div id="hitl2_reason_${tab}_${fid}" style="display:none;margin-top:0.4rem;">
+                <input type="text" id="hitl2_reason_input_${tab}_${fid}"
+                       placeholder="Why is this finding incorrect or irrelevant? (required)"
+                       style="width:100%;padding:0.4rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.8rem;">
+            </div>
+            <input type="hidden" name="hitl2_finding_id_${tab}_${fid}" value="${fid}">
+            <input type="hidden" name="hitl2_block_${tab}_${fid}" value="${tab}">
+        </div>`;
+    });
+
+    if (!html) {
+        html = `<div class="empty-state" style="padding:1.5rem;">No classified alerts in this category.</div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function toggleHitl2Reason(key, show) {
+    const el = document.getElementById(`hitl2_reason_${key}`);
+    if (el) el.style.display = show ? 'block' : 'none';
+}
+
+async function submitL4Hitl2() {
+    const appId = STATE._l4AppId;
+    const allFindings = [];
+    const blocks = ['adverse_media', 'litigation', 'mca_checks'];
+
+    for (const tab of blocks) {
+        const blockData = (STATE._l4Hitl2Data?.research_findings || {})[tab] || {};
+        const alerts = blockData.alerts || [];
+
+        alerts.forEach((alert, i) => {
+            const fid = alert.finding_id || `${tab}_alert_${i}`;
+            const selected = document.querySelector(`input[name="hitl2_${tab}_${fid}"]:checked`);
+            const action = selected?.value || 'KEEP';
+
+            if (action === 'DISMISS') {
+                const reason = document.getElementById(`hitl2_reason_input_${tab}_${fid}`)?.value?.trim();
+                if (!reason) {
+                    showToast(`❌ Reason required to dismiss finding: ${alert.type || fid}`);
+                    return;
+                }
+                allFindings.push({ block: tab, finding_id: fid, action: 'DISMISS', reason });
+            }
+        });
+    }
+
+    document.getElementById('btnSubmitHitl2').disabled = true;
+    document.getElementById('btnSubmitHitl2').textContent = 'Submitting...';
+
+    try {
+        await fetch(`/api/applications/${appId}/layer4_hitl_2`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ findings: allFindings })
+        });
+        document.getElementById('modalL4Hitl2').style.display = 'none';
+        const dismissed = allFindings.filter(f => f.action === 'DISMISS').length;
+        showToast(`✅ HITL-2 submitted — ${dismissed} findings dismissed`);
+    } catch (e) {
+        showToast('❌ Failed to submit HITL-2');
+        document.getElementById('btnSubmitHitl2').disabled = false;
+        document.getElementById('btnSubmitHitl2').textContent = 'Submit Review & Continue';
+    }
+}
+
+async function skipL4Hitl2() {
+    const appId = STATE._l4AppId;
+    document.getElementById('modalL4Hitl2').style.display = 'none';
+    await fetch(`/api/applications/${appId}/layer4_hitl_2`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ findings: [] })
+    });
+    showToast('⏩ HITL-2 skipped — all research findings accepted');
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// LAYER 4 HITL-3: Feature Override Panel
+// ═══════════════════════════════════════════════════════════
+
+function renderL4Hitl3Modal(data) {
+    const features = data.features || [];
+    const officer = data.officer_analysis || {};
+
+    document.getElementById('hitl3OfficerSummary').textContent =
+        officer.summary || 'No officer notes provided — default values used.';
+
+    const sourceColors = {
+        'L2': '#6366f1', 'L3': '#8b5cf6',
+        'A1': '#ef4444', 'A2': '#ef4444', 'A3': '#ef4444', 'A4': '#ef4444',
+        'B1': '#f59e0b', 'B2': '#f59e0b', 'B3': '#f59e0b',
+        'C1': '#3b82f6', 'C2': '#3b82f6', 'C3': '#3b82f6',
+        'D1': '#06b6d4', 'D2': '#06b6d4',
+        'E1': '#10b981', 'F1': '#84cc16',
+    };
+
+    let rows = '';
+    features.forEach(feat => {
+        const srcColor = sourceColors[feat.source] || '#6b7280';
+        const val = typeof feat.value === 'number' ? feat.value.toFixed(3) : (feat.value ?? feat.default);
+        rows += `<tr>
+            <td style="font-size:0.85rem;font-weight:500;">${feat.name.replace(/_/g, ' ')}</td>
+            <td style="font-weight:600;color:#e2e8f0;">${val}</td>
+            <td><span style="background:${srcColor};color:#fff;padding:0.15rem 0.4rem;border-radius:4px;font-size:0.7rem;">${feat.source}</span></td>
+            <td>
+                <input type="number" id="hitl3_val_${feat.name}" step="0.01"
+                       placeholder="${val}"
+                       onchange="document.getElementById('hitl3_reason_${feat.name}').required=true"
+                       style="width:90px;padding:0.3rem;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:0.82rem;">
+            </td>
+            <td>
+                <input type="text" id="hitl3_reason_${feat.name}"
+                       placeholder="Required if overriding..."
+                       style="width:100%;padding:0.3rem;background:var(--card-bg);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:0.8rem;">
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById('hitl3FeaturesBody').innerHTML = rows;
+}
+
+async function submitL4Hitl3() {
+    const appId = STATE._l4AppId;
+    const features = STATE._l4Hitl3Data?.features || [];
+    const overrides = [];
+
+    for (const feat of features) {
+        const valInput = document.getElementById(`hitl3_val_${feat.name}`);
+        const reasonInput = document.getElementById(`hitl3_reason_${feat.name}`);
+        const newVal = valInput?.value?.trim();
+        const reason = reasonInput?.value?.trim();
+
+        if (newVal !== '' && newVal !== null && newVal !== undefined) {
+            if (!reason) {
+                showToast(`❌ Reason required to override: ${feat.name.replace(/_/g, ' ')}`);
+                return;
+            }
+            overrides.push({ feature: feat.name, new_value: parseFloat(newVal), reason });
+        }
+    }
+
+    document.getElementById('btnSubmitHitl3').disabled = true;
+    document.getElementById('btnSubmitHitl3').textContent = 'Submitting...';
+
+    try {
+        await fetch(`/api/applications/${appId}/layer4_hitl_3`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ overrides })
+        });
+        document.getElementById('modalL4Hitl3').style.display = 'none';
+        showToast(`✅ HITL-3 submitted — ${overrides.length} feature override(s) applied`);
+    } catch (e) {
+        showToast('❌ Failed to submit HITL-3');
+        document.getElementById('btnSubmitHitl3').disabled = false;
+        document.getElementById('btnSubmitHitl3').textContent = 'Submit Overrides & Complete Layer 4';
+    }
+}
+
+async function skipL4Hitl3() {
+    const appId = STATE._l4AppId;
+    document.getElementById('modalL4Hitl3').style.display = 'none';
+    await fetch(`/api/applications/${appId}/layer4_hitl_3`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: [] })
+    });
+    showToast('⏩ HITL-3 skipped — all computed features accepted');
 }

@@ -22,6 +22,9 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max upload
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+import threading
+_layer4_events: dict = {}   # app_id → {"e1": Event, "e2": Event, "e3": Event, "d1": {}, "d2": {}, "d3": {}}
+
 ALLOWED_EXTENSIONS = {'pdf', 'csv', 'xlsx', 'xls'}
 
 # ─── MySQL Connection ────────────────────────────────────────────────────────
@@ -730,6 +733,13 @@ def get_application(app_id):
         except:
             pass
 
+    # Parse layer4_output if present
+    if app_data.get('layer4_output'):
+        try:
+            app_data['layer4_output'] = json.loads(app_data['layer4_output'])
+        except:
+            pass
+
     # Get documents
     cur.execute("SELECT * FROM documents WHERE application_id=%s ORDER BY uploaded_at", (app_id,))
     docs = cur.fetchall()
@@ -999,7 +1009,8 @@ def confirm_docs(app_id):
     # Run Layer 2+ in a background thread
     socketio.start_background_task(
         _run_pipeline_layer2_onwards,
-        app_id, app_data['case_id'], app_data['company_name'], filepaths
+        app_id, app_data['case_id'], app_data['company_name'], filepaths,
+        officer_notes=request.json.get('officer_notes', '')
     )
 
     return jsonify({"status": "ok", "message": "Pipeline resuming"})
@@ -1022,7 +1033,89 @@ def cancel_review(app_id):
         cur.close()
         conn.close()
 
-def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths):
+
+# ─── Layer 4 HITL Endpoints ──────────────────────────────────────────────────
+
+@app.route('/api/applications/<int:app_id>/layer4_hitl_1', methods=['POST'])
+@login_required
+def layer4_hitl_1(app_id):
+    """HITL-1: Officer reviews forensic flags (GST + Bank). Submits dismissals."""
+    body = request.json or {}
+    dismissed_ids = body.get('dismissed_alert_ids', [])     # list of alert_id strings
+    dismiss_reasons = body.get('dismiss_reasons', {})       # {alert_id: reason}
+    officer_id = str(session.get('user_id', 'unknown'))
+
+    slot = _layer4_events.get(app_id)
+    if not slot:
+        return jsonify({"error": "No active Layer 4 pipeline for this application"}), 404
+
+    slot['d1'] = {
+        'dismissed_alert_ids': dismissed_ids,
+        'dismiss_reasons': dismiss_reasons,
+        'officer_id': officer_id,
+        'submitted_at': datetime.utcnow().isoformat(),
+    }
+    slot['e1'].set()   # unblock the pipeline thread
+
+    log_audit(session['user_id'], 'L4_HITL_1', None,
+              {'dismissed': len(dismissed_ids), 'app_id': app_id})
+    return jsonify({"status": "ok", "dismissed": len(dismissed_ids)})
+
+
+@app.route('/api/applications/<int:app_id>/layer4_hitl_2', methods=['POST'])
+@login_required
+def layer4_hitl_2(app_id):
+    """HITL-2: Officer reviews web research findings. Submits dismissals."""
+    body = request.json or {}
+    # [{block, finding_id, reason, action:'KEEP'|'DISMISS'}]
+    dismissed_findings = [f for f in body.get('findings', []) if f.get('action') == 'DISMISS']
+    officer_id = str(session.get('user_id', 'unknown'))
+
+    slot = _layer4_events.get(app_id)
+    if not slot:
+        return jsonify({"error": "No active Layer 4 pipeline for this application"}), 404
+
+    slot['d2'] = {
+        'dismissed_findings': dismissed_findings,
+        'officer_id': officer_id,
+        'submitted_at': datetime.utcnow().isoformat(),
+    }
+    slot['e2'].set()
+
+    log_audit(session['user_id'], 'L4_HITL_2', None,
+              {'dismissed_findings': len(dismissed_findings), 'app_id': app_id})
+    return jsonify({"status": "ok", "dismissed": len(dismissed_findings)})
+
+
+@app.route('/api/applications/<int:app_id>/layer4_hitl_3', methods=['POST'])
+@login_required
+def layer4_hitl_3(app_id):
+    """HITL-3: Officer overrides feature values before Layer 5 ML scoring."""
+    body = request.json or {}
+    # [{feature, new_value, reason}]
+    feature_overrides = [
+        fo for fo in body.get('overrides', [])
+        if fo.get('feature') and fo.get('reason', '').strip()
+    ]
+    officer_id = str(session.get('user_id', 'unknown'))
+
+    slot = _layer4_events.get(app_id)
+    if not slot:
+        return jsonify({"error": "No active Layer 4 pipeline for this application"}), 404
+
+    slot['d3'] = {
+        'feature_overrides': feature_overrides,
+        'officer_id': officer_id,
+        'submitted_at': datetime.utcnow().isoformat(),
+    }
+    slot['e3'].set()
+
+    log_audit(session['user_id'], 'L4_HITL_3', None,
+              {'overrides': len(feature_overrides), 'app_id': app_id})
+    return jsonify({"status": "ok", "overrides": len(feature_overrides)})
+
+
+def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, officer_notes=''):
     """Background task: run Layer 2 through Layer 6."""
     import time
 
@@ -1125,9 +1218,200 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths):
             "error": str(e)
         }, room=f'app_{app_id}')
 
-    # ─── Layers 4-6: Placeholder progress (future implementation) ────────
+    # ─── Layer 4: Forensics, Research & Feature Engineering (3× HITL) ───────
+    socketio.emit('layer_progress', {"layer": 4, "name": "Forensics & Research",
+                  "status": "processing", "pct": 3}, room=f'app_{app_id}')
+
+    try:
+        from layer4.layer4_chain import (
+            run_stage1_forensics, apply_hitl1_decisions,
+            run_stage2_research,  apply_hitl2_decisions,
+            run_stage3_build,     apply_hitl3_decisions,
+            run_stage4_finalize
+        )
+
+        # Parse L2 / L3 data
+        l2_data = {}
+        try:
+            l2_parsed = json.loads(output_json) if isinstance(output_json, str) else output_json
+            l2_data = l2_parsed.get('extracted', {}).get('financial_data', {}) or l2_parsed
+        except: pass
+
+        l3_data = {}
+        try:
+            l3_data = json.loads(layer3_json) if isinstance(layer3_json, str) else layer3_json
+        except: pass
+
+        company_identifiers = {
+            "company_name":  company_name or l2_data.get("company_name", ""),
+            "promoter_name": l2_data.get("promoter_name", "") or l2_data.get("assessee_name", ""),
+            "gstin":         l2_data.get("gstin", ""),
+            "pan_number":    l2_data.get("pan_number", ""),
+            "cin":           l2_data.get("cin", ""),
+            "din":           l2_data.get("din", ""),
+            "industry":      l2_data.get("industry", "") or l2_data.get("nature_of_business", ""),
+        }
+
+        l4_data = {
+            "layer2_data": l2_data,
+            "layer3_data": l3_data,
+            "company_identifiers": company_identifiers,
+            "officer_notes": officer_notes or "",
+            "case_id": case_id,
+            "company_name": company_name,
+            "hitl_audit_trail": [],
+        }
+
+        # Initialise event slots for this app_id
+        e1 = threading.Event()
+        e2 = threading.Event()
+        e3 = threading.Event()
+        _layer4_events[app_id] = {"e1": e1, "e2": e2, "e3": e3, "d1": {}, "d2": {}, "d3": {}}
+
+        # ─ STAGE 1: Pure Python Forensics ───────────────
+        socketio.emit('layer_progress', {"layer": 4, "name": "Forensics & Research",
+                      "status": "processing", "pct": 10,
+                      "detail": "Running GST & bank forensics..."}, room=f'app_{app_id}')
+        l4_data = run_stage1_forensics(l4_data)
+
+        # Collect forensic alerts for HITL-1
+        all_f_alerts = (
+            l4_data.get("gst_forensics_alerts", []) +
+            l4_data.get("bank_forensics_alerts", [])
+        )
+        red_amber = [a for a in all_f_alerts if a.get("severity") in ("RED", "AMBER")]
+
+        # ―― HITL-1 PAUSE ――
+        socketio.emit('layer4_hitl_forensics', {
+            "app_id": app_id,
+            "alerts": red_amber,
+            "total": len(all_f_alerts),
+            "red": sum(1 for a in all_f_alerts if a.get("severity") == "RED"),
+            "amber": sum(1 for a in all_f_alerts if a.get("severity") == "AMBER"),
+        }, room=f'app_{app_id}')
+        e1.wait(timeout=300)   # block until HITL-1 submitted or 5-min timeout
+
+        d1 = _layer4_events[app_id].get("d1", {})
+        if d1.get("dismissed_alert_ids"):
+            l4_data = apply_hitl1_decisions(
+                l4_data,
+                dismissed_alert_ids=d1.get("dismissed_alert_ids", []),
+                dismiss_reasons=d1.get("dismiss_reasons", {}),
+                officer_id=d1.get("officer_id", "unknown")
+            )
+
+        # ─ STAGE 2: Web Research ───────────────
+        socketio.emit('layer_progress', {"layer": 4, "name": "Forensics & Research",
+                      "status": "processing", "pct": 30,
+                      "detail": "Running web research (Tavily + Groq)..."}, room=f'app_{app_id}')
+        l4_data = run_stage2_research(l4_data)
+
+        # Build research findings payload for HITL-2
+        research_findings = {
+            "adverse_media": l4_data.get("adverse_media", {}),
+            "litigation": l4_data.get("litigation", {}),
+            "mca_checks": l4_data.get("mca_checks", {}),
+        }
+
+        # ―― HITL-2 PAUSE ――
+        socketio.emit('layer4_hitl_research', {
+            "app_id": app_id,
+            "research_findings": research_findings,
+            "sector_risk": l4_data.get("sector_risk", {}),
+            "cibil": l4_data.get("cibil", {}),
+        }, room=f'app_{app_id}')
+        e2.wait(timeout=300)
+
+        d2 = _layer4_events[app_id].get("d2", {})
+        if d2.get("dismissed_findings"):
+            l4_data = apply_hitl2_decisions(
+                l4_data,
+                dismissed_findings=d2.get("dismissed_findings", []),
+                officer_id=d2.get("officer_id", "unknown")
+            )
+
+        # ─ STAGE 3: Officer NLP + Feature Build ──────
+        socketio.emit('layer_progress', {"layer": 4, "name": "Forensics & Research",
+                      "status": "processing", "pct": 70,
+                      "detail": "Building credit feature vector..."}, room=f'app_{app_id}')
+        l4_data = run_stage3_build(l4_data)
+
+        from layer4.consolidation.feature_engine import FEATURE_DEFINITIONS
+        features_for_hitl = [
+            {
+                "name": fd["name"],
+                "value": l4_data.get("feature_vector", {}).get(fd["name"], fd["default"]),
+                "source": fd["source"],
+                "default": fd["default"]
+            }
+            for fd in FEATURE_DEFINITIONS
+        ]
+
+        # ―― HITL-3 PAUSE ――
+        socketio.emit('layer4_hitl_features', {
+            "app_id": app_id,
+            "features": features_for_hitl,
+            "officer_analysis": l4_data.get("officer_analysis", {}),
+        }, room=f'app_{app_id}')
+        e3.wait(timeout=300)
+
+        d3 = _layer4_events[app_id].get("d3", {})
+        if d3.get("feature_overrides"):
+            l4_data = apply_hitl3_decisions(
+                l4_data,
+                feature_overrides=d3.get("feature_overrides", []),
+                officer_id=d3.get("officer_id", "unknown")
+            )
+
+        # ─ STAGE 4: Finalize ───────────────
+        socketio.emit('layer_progress', {"layer": 4, "name": "Forensics & Research",
+                      "status": "processing", "pct": 90,
+                      "detail": "Generating AI explanations..."}, room=f'app_{app_id}')
+        all_dismissed = d1.get("dismissed_alert_ids", []) if d1 else []
+        l4_data = run_stage4_finalize(l4_data, all_dismissed)
+
+        layer4_result = l4_data.get("layer4_output", {})
+        layer4_json = json.dumps(layer4_result, indent=2, default=str)
+
+        # Save to DB
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute("ALTER TABLE applications ADD COLUMN layer4_output LONGTEXT")
+            conn.commit()
+        except:
+            conn.rollback()
+        cur.execute("UPDATE applications SET layer4_output=%s, current_layer=4 WHERE id=%s",
+                    (layer4_json, app_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        report = layer4_result.get('forensics_report', {})
+        audit_count = len(layer4_result.get('hitl_audit_trail', []))
+        socketio.emit('layer_complete', {
+            "layer": 4,
+            "name": "Forensics & Research",
+            "status": "done",
+            "red_flags": report.get('red_flag_count', 0),
+            "amber_flags": report.get('amber_flag_count', 0),
+            "features_computed": len(layer4_result.get('feature_vector', {})),
+            "hitl_audit_entries": audit_count,
+        }, room=f'app_{app_id}')
+        print(f"Layer 4 complete | {audit_count} HITL audit entries")
+
+    except Exception as e:
+        print(f"Layer 4 pipeline error: {e}")
+        import traceback; traceback.print_exc()
+        socketio.emit('layer_complete', {
+            "layer": 4, "name": "Forensics & Research",
+            "status": "error", "error": str(e)
+        }, room=f'app_{app_id}')
+    finally:
+        _layer4_events.pop(app_id, None)
+
+    # ─── Layers 5-6: Placeholder progress (future implementation) ────────
     layer_names = {
-        4: "Web Research",
         5: "Risk Scoring",
         6: "CAM Generation"
     }

@@ -51,16 +51,16 @@
                 <span class="nav-label">Financial Analysis</span>
                 <span class="layer-status" id="layerStatus2"></span>
             </a>
-            <a class="nav-item layer-item disabled" data-section="anomaly" data-layer="3"
-                onclick="showSection('anomaly')">
-                <span class="nav-icon"><i data-lucide="alert-triangle"></i></span>
-                <span class="nav-label">Anomaly Detection</span>
-                <span class="layer-status" id="layerStatus3"></span>
-            </a>
-            <a class="nav-item layer-item disabled" data-section="research" data-layer="4"
+            <a class="nav-item layer-item disabled" data-section="research" data-layer="3"
                 onclick="showSection('research')">
                 <span class="nav-icon"><i data-lucide="globe"></i></span>
                 <span class="nav-label">Web Research</span>
+                <span class="layer-status" id="layerStatus3"></span>
+            </a>
+            <a class="nav-item layer-item disabled" data-section="anomaly" data-layer="4"
+                onclick="showSection('anomaly')">
+                <span class="nav-icon"><i data-lucide="alert-triangle"></i></span>
+                <span class="nav-label">Anomaly Detection</span>
                 <span class="layer-status" id="layerStatus4"></span>
             </a>
             <a class="nav-item layer-item disabled" data-section="scoring" data-layer="5"
@@ -323,19 +323,112 @@
             </div>
         </section>
 
-        <!-- ═══════════════ SECTION: ANOMALY DETECTION ═══════════════ -->
-        <section class="content-section" id="section-anomaly">
-            <div class="card">
-                <h3 class="card-title">Anomaly Detection Results</h3>
-                <div id="anomalyResults" class="empty-state">Run pipeline to detect anomalies</div>
+        <!-- ═══════════════ SECTION: WEB RESEARCH ═══════════════ -->
+        <section class="content-section" id="section-research">
+            <!-- Overall Research Summary -->
+            <div class="card" style="border-left: 4px solid var(--accent);">
+                <h3 class="card-title"><i data-lucide="globe" style="width:20px;display:inline;"></i> Web Research Agent
+                    Summary</h3>
+                <div id="researchSummaryContent" class="empty-state">Run pipeline to perform web research</div>
+            </div>
+
+            <!-- C1: Adverse Media -->
+            <div class="card" id="researchAdverseCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">🔎 Promoter & Company Adverse Media</h3>
+                <div id="adverseMediaSummary" style="margin-bottom: 1rem;"></div>
+                <div id="adverseMediaSnippets"></div>
+            </div>
+
+            <!-- C2: Litigation -->
+            <div class="card" id="researchLitigationCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">⚖️ Litigation & eCourts History</h3>
+                <div id="litigationSummary" style="margin-bottom: 1rem;"></div>
+                <div id="litigationCases"></div>
+            </div>
+
+            <!-- C3: Sector Risk -->
+            <div class="card" id="researchSectorCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">📈 Sector Risk Intelligence</h3>
+                <div id="sectorRiskSummary" style="margin-bottom: 1rem;"></div>
+                <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+                    <div id="sectorHeadwinds" style="flex:1;min-width:250px;"></div>
+                    <div id="sectorTailwinds" style="flex:1;min-width:250px;"></div>
+                </div>
+            </div>
+
+            <!-- D1-D2: MCA/ROC -->
+            <div class="card" id="researchMcaCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">🏛️ MCA/ROC & Director Status</h3>
+                <div id="mcaSummary" style="margin-bottom: 1rem;"></div>
+                <div id="mcaDetails"></div>
+            </div>
+
+            <!-- E1: CIBIL -->
+            <div class="card" id="researchCibilCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">🏦 CIBIL Commercial Report</h3>
+                <div id="cibilSummary" style="margin-bottom: 1rem;"></div>
+                <div id="cibilDetails"></div>
+            </div>
+
+            <!-- Raw Search Results -->
+            <div class="card" id="researchRawCard" style="display:none;">
+                <h3 class="card-title" style="cursor:pointer;"
+                    onclick="document.getElementById('rawSearchResults').style.display = document.getElementById('rawSearchResults').style.display === 'none' ? 'block' : 'none';">
+                    📋 Raw Search Results (click to expand)
+                </h3>
+                <div id="rawSearchResults" style="display:none;"></div>
             </div>
         </section>
 
-        <!-- ═══════════════ SECTION: WEB RESEARCH ═══════════════ -->
-        <section class="content-section" id="section-research">
-            <div class="card">
-                <h3 class="card-title">Web Research Agent Results</h3>
-                <div id="researchResults" class="empty-state">Run pipeline to perform web research</div>
+        <!-- ═══════════════ SECTION: ANOMALY DETECTION ═══════════════ -->
+        <section class="content-section" id="section-anomaly">
+            <!-- Overall Forensics Summary -->
+            <div class="card" id="forensicsSummaryCard" style="border-left: 4px solid var(--accent);">
+                <h3 class="card-title"><i data-lucide="alert-triangle" style="width:20px;display:inline;"></i> Forensic
+                    Alert Summary</h3>
+                <div id="forensicsSummaryContent" class="empty-state">Run pipeline to detect anomalies</div>
+            </div>
+
+            <!-- Alert Cards Grid -->
+            <div id="alertCardsGrid"
+                style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-bottom:1.5rem;">
+            </div>
+
+            <!-- GST Forensics -->
+            <div class="card" id="gstForensicsCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">📊 GST Forensics</h3>
+                <div id="gstForensicsContent"></div>
+            </div>
+
+            <!-- Bank Forensics -->
+            <div class="card" id="bankForensicsCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">🏦 Bank Statement Forensics</h3>
+                <div id="bankForensicsContent"></div>
+            </div>
+
+            <!-- Officer Notes Compare -->
+            <div class="card" id="officerCompareCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">📋 Officer Notes: Before vs After Validation
+                </h3>
+                <div id="officerCompareContent"></div>
+            </div>
+
+            <!-- Feature Vector -->
+            <div class="card" id="featureVectorCard" style="display:none;">
+                <h3 class="card-title" style="color: var(--text-primary);">⚡ Credit Feature Vector (25 Features → Layer
+                    5)</h3>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th>Value</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="featureVectorBody"></tbody>
+                    </table>
+                </div>
             </div>
         </section>
 
@@ -592,6 +685,162 @@
                 </button>
                 <button class="btn btn-primary" onclick="confirmHitlReview()" id="btnConfirmHitl">
                     <i data-lucide="check-circle" class="w-4 h-4"></i> Confirm & Continue Pipeline
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ LAYER 4 HITL-1: FORENSIC FLAG REVIEW ═══════════════ -->
+    <div class="modal-overlay" id="modalL4Hitl1" style="display:none;">
+        <div class="modal modal-lg">
+            <div class="modal-header" style="background:linear-gradient(135deg,#7c1d1d,#991b1b);">
+                <div>
+                    <h3><i data-lucide="alert-triangle" class="w-5 h-5 inline-block mr-2"></i>HITL Review 1 of 3 —
+                        Forensic Flag Review</h3>
+                    <p style="opacity:0.8;font-size:0.85rem;">Review AI-detected GST & bank anomalies before web
+                        research runs. Dismiss false positives with a reason.</p>
+                </div>
+                <button class="modal-close" onclick="skipL4Hitl1()">×</button>
+            </div>
+            <div class="modal-body">
+                <div
+                    style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;">
+                    ⚠️ <strong>Pipeline is paused.</strong> Dismissing a flag removes its score penalty and excludes it
+                    from the CAM. Every action is logged with your reason for governance audit.
+                </div>
+                <div id="hitl1AlertsContainer"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="skipL4Hitl1()">
+                    <i data-lucide="fast-forward"></i> Skip — Accept All Flags
+                </button>
+                <button class="btn btn-primary" id="btnSubmitHitl1" onclick="submitL4Hitl1()">
+                    <i data-lucide="check-circle"></i> Submit Review & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ LAYER 4 HITL-2: RESEARCH REVIEW ═══════════════ -->
+    <div class="modal-overlay" id="modalL4Hitl2" style="display:none;">
+        <div class="modal modal-lg">
+            <div class="modal-header" style="background:linear-gradient(135deg,#1e3a5f,#1e4d8c);">
+                <div>
+                    <h3><i data-lucide="globe" class="w-5 h-5 inline-block mr-2"></i>HITL Review 2 of 3 — Web Research
+                        Classification</h3>
+                    <p style="opacity:0.8;font-size:0.85rem;">AI classified these web search results. Dismiss incorrect
+                        or irrelevant findings with a reason.</p>
+                </div>
+                <button class="modal-close" onclick="skipL4Hitl2()">×</button>
+            </div>
+            <div class="modal-body">
+                <div
+                    style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;">
+                    💡 Each dismissed finding is removed from the alert list and not counted in the risk score. Source
+                    URLs are shown for verification.
+                </div>
+                <!-- Tabs -->
+                <div
+                    style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem;">
+                    <button class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.75rem;"
+                        onclick="showHitl2Tab('adverse_media')" id="htab_adverse_media">Adverse Media</button>
+                    <button class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.75rem;"
+                        onclick="showHitl2Tab('litigation')" id="htab_litigation">Litigation</button>
+                    <button class="btn btn-outline" style="font-size:0.8rem;padding:0.3rem 0.75rem;"
+                        onclick="showHitl2Tab('mca_checks')" id="htab_mca_checks">MCA/ROC</button>
+                </div>
+                <div id="hitl2FindingsContainer"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="skipL4Hitl2()">
+                    <i data-lucide="fast-forward"></i> Skip — Accept All Findings
+                </button>
+                <button class="btn btn-primary" id="btnSubmitHitl2" onclick="submitL4Hitl2()">
+                    <i data-lucide="check-circle"></i> Submit Review & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ LAYER 4 HITL-3: FEATURE OVERRIDE ═══════════════ -->
+    <div class="modal-overlay" id="modalL4Hitl3" style="display:none;">
+        <div class="modal modal-lg">
+            <div class="modal-header" style="background:linear-gradient(135deg,#14532d,#166534);">
+                <div>
+                    <h3><i data-lucide="sliders-horizontal" class="w-5 h-5 inline-block mr-2"></i>HITL Review 3 of 3 —
+                        Feature Override Panel</h3>
+                    <p style="opacity:0.8;font-size:0.85rem;">Review the computed credit features before ML scoring.
+                        Override values with a documented reason — all changes are logged in the CAM.</p>
+                </div>
+                <button class="modal-close" onclick="skipL4Hitl3()">×</button>
+            </div>
+            <div class="modal-body">
+                <div
+                    style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;">
+                    📋 <strong>Officer analysis:</strong> <span id="hitl3OfficerSummary"
+                        style="color:var(--text-secondary);">—</span>
+                </div>
+                <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.5rem;">⚠ Reason is
+                    <strong>mandatory</strong> for any override — it appears in the CAM and governance audit trail.
+                </div>
+                <table class="data-table" id="hitl3FeaturesTable">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Computed Value</th>
+                            <th>Source</th>
+                            <th>Override Value</th>
+                            <th>Reason (mandatory if changed)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hitl3FeaturesBody"></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="skipL4Hitl3()">
+                    <i data-lucide="fast-forward"></i> Skip — Accept All Features
+                </button>
+                <button class="btn btn-primary" id="btnSubmitHitl3" onclick="submitL4Hitl3()">
+                    <i data-lucide="check-circle"></i> Submit Overrides & Complete Layer 4
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ OFFICER NOTES MODAL ═══════════════ -->
+    <div class="modal-overlay" id="modalOfficerNotes" style="display:none;">
+        <div class="modal modal-lg">
+            <div class="modal-header" style="background: linear-gradient(135deg, #1e3a5f, #2d5a87);">
+                <div>
+                    <h3><i data-lucide="clipboard-list" class="w-5 h-5 inline-block mr-2"></i>Credit Officer Site-Visit
+                        Notes</h3>
+                    <p style="opacity:0.8;font-size:0.85rem;">Optional — AI will extract structured insights from your
+                        observations</p>
+                </div>
+                <button class="modal-close" onclick="skipOfficerNotes()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div
+                    style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:1rem;margin-bottom:1rem;">
+                    <strong>💡 What to include:</strong> Factory status, capacity utilisation, management depth,
+                    succession risks,
+                    working capital management observations, inventory levels, workforce quality, customer
+                    concentration.
+                </div>
+                <textarea id="officerNotesText" rows="10" class="form-control"
+                    style="width:100%;font-family:'Inter',sans-serif;font-size:0.9rem;line-height:1.6;background:var(--card-bg);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;padding:1rem;resize:vertical;"
+                    placeholder="Factory was operational at ~70% capacity during visit. Workers observed on floor.
+No succession plan — single promoter (Mr. Sharma) handles all operations and client relationships.
+Inventory levels appear adequate (~45 days stock). Raw material sourcing from 3 suppliers.
+Working capital management seems stretched — delayed payments to 2 suppliers noted.
+Management depth: weak — only promoter + 1 accountant handle all financial decisions."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="skipOfficerNotes()">
+                    <i data-lucide="fast-forward" class="w-4 h-4"></i> Skip — Proceed without Notes
+                </button>
+                <button class="btn btn-primary" onclick="submitWithOfficerNotes()">
+                    <i data-lucide="send" class="w-4 h-4"></i> Submit Notes & Continue
                 </button>
             </div>
         </div>
