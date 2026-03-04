@@ -1,0 +1,544 @@
+{
+  "layer3_result": {
+    "clean_data": {
+      "accounting_standard": "UNKNOWN",
+      "revenue": null,
+      "net_worth": null,
+      "total_debt": null,
+      "pat": null,
+      "gstr_3b_sales": null,
+      "gstr_2a_sales": null,
+      "balance_sheet_date": null,
+      "borrower_name": null,
+      "pan": "AABCR1234F",
+      "cin": null
+    },
+    "derived_features": {
+      "revenue_lakhs": null,
+      "net_worth_lakhs": null,
+      "debt_lakhs": null,
+      "pat_lakhs": null,
+      "de_ratio": null,
+      "dscr_proxy": null,
+      "gst_mismatch_ratio": null,
+      "high_leverage_flag": null,
+      "revenue_gst_alignment": null,
+      "pat_to_debt_ratio": null,
+      "return_on_net_worth": null,
+      "is_profitable": null,
+      "accounting_standard": "UNKNOWN",
+      "review_required_flag": false,
+      "fields_needing_review": [],
+      "missing_field_count": 9
+    },
+    "validation_report": {
+      "auto_fixed_count": 2,
+      "auto_fixed_fields": [
+        {
+          "field_name": "schema_version",
+          "original_value": null,
+          "cleaned_value": "2.0.0",
+          "rule_applied": "SCHEMA_VER_ASSIGN: No version declared, assigned 2.0.0",
+          "module": "SchemaVersionControl",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "AUTO_FIXED",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "accounting_standard",
+          "original_value": null,
+          "cleaned_value": "UNKNOWN",
+          "rule_applied": "INDAS_DETECT: UNKNOWN (ind=0, old=0)",
+          "module": "IndASDetector",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "AUTO_FIXED",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        }
+      ],
+      "flagged_for_review_count": 9,
+      "flagged_for_review_fields": [
+        {
+          "field_name": "revenue",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "net_worth",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "total_debt",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "pat",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (IMPORTANT)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "gstr_3b_sales",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (IMPORTANT)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "gstr_2a_sales",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (IMPORTANT)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "balance_sheet_date",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "borrower_name",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        },
+        {
+          "field_name": "cin",
+          "original_value": null,
+          "cleaned_value": null,
+          "rule_applied": "MISSING_FLAGGED (OPTIONAL)",
+          "module": "MissingValueHandler",
+          "source_page": null,
+          "source_document": "TEST-CASE_Test Company_layer2",
+          "confidence": null,
+          "action": "FLAGGED_FOR_REVIEW",
+          "timestamp": "2026-03-04T05:18:33.076851"
+        }
+      ],
+      "risk_flags": [
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "revenue",
+          "description": "Required field 'revenue' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "net_worth",
+          "description": "Required field 'net_worth' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "total_debt",
+          "description": "Required field 'total_debt' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "balance_sheet_date",
+          "description": "Required field 'balance_sheet_date' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "borrower_name",
+          "description": "Required field 'borrower_name' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "INDAS_002",
+          "field_name": "accounting_standard",
+          "description": "Could not determine accounting standard",
+          "severity": "LOW",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "revenue",
+          "description": "Missing REQUIRED field 'revenue'",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": true
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "net_worth",
+          "description": "Missing REQUIRED field 'net_worth'",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": true
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "total_debt",
+          "description": "Missing REQUIRED field 'total_debt'",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": true
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "pat",
+          "description": "Missing IMPORTANT field 'pat'",
+          "severity": "MEDIUM",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "gstr_3b_sales",
+          "description": "Missing IMPORTANT field 'gstr_3b_sales'",
+          "severity": "MEDIUM",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "gstr_2a_sales",
+          "description": "Missing IMPORTANT field 'gstr_2a_sales'",
+          "severity": "MEDIUM",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "balance_sheet_date",
+          "description": "Missing REQUIRED field 'balance_sheet_date'",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": true
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "borrower_name",
+          "description": "Missing REQUIRED field 'borrower_name'",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": true
+        },
+        {
+          "rule_id": "MISSING_001",
+          "field_name": "cin",
+          "description": "Missing OPTIONAL field 'cin'",
+          "severity": "MEDIUM",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        }
+      ],
+      "risk_flag_count": 15,
+      "schema_errors": [
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "revenue",
+          "description": "Required field 'revenue' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "net_worth",
+          "description": "Required field 'net_worth' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "total_debt",
+          "description": "Required field 'total_debt' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "balance_sheet_date",
+          "description": "Required field 'balance_sheet_date' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        },
+        {
+          "rule_id": "SCHEMA_001",
+          "field_name": "borrower_name",
+          "description": "Required field 'borrower_name' is missing",
+          "severity": "HIGH",
+          "current_value": null,
+          "expected_range": "",
+          "auto_reject": false
+        }
+      ],
+      "review_required": false,
+      "auto_reject": true,
+      "review_fields": [],
+      "severity_summary": {
+        "LOW": 1,
+        "MEDIUM": 4,
+        "HIGH": 10,
+        "CRITICAL": 0
+      }
+    },
+    "transformation_log": [
+      {
+        "field_name": "schema_version",
+        "original_value": null,
+        "cleaned_value": "2.0.0",
+        "rule_applied": "SCHEMA_VER_ASSIGN: No version declared, assigned 2.0.0",
+        "module": "SchemaVersionControl",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "AUTO_FIXED",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "accounting_standard",
+        "original_value": null,
+        "cleaned_value": "UNKNOWN",
+        "rule_applied": "INDAS_DETECT: UNKNOWN (ind=0, old=0)",
+        "module": "IndASDetector",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "AUTO_FIXED",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "revenue",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "net_worth",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "total_debt",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "pat",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (IMPORTANT)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "gstr_3b_sales",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (IMPORTANT)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "gstr_2a_sales",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (IMPORTANT)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "balance_sheet_date",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "borrower_name",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (REQUIRED)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      },
+      {
+        "field_name": "cin",
+        "original_value": null,
+        "cleaned_value": null,
+        "rule_applied": "MISSING_FLAGGED (OPTIONAL)",
+        "module": "MissingValueHandler",
+        "source_page": null,
+        "source_document": "TEST-CASE_Test Company_layer2",
+        "confidence": null,
+        "action": "FLAGGED_FOR_REVIEW",
+        "timestamp": "2026-03-04T05:18:33.076851"
+      }
+    ],
+    "raw_snapshot": {
+      "pan": {
+        "value": "AABCR1234F",
+        "confidence": 0.9
+      },
+      "_metadata": {
+        "source_document": "TEST-CASE_Test Company_layer2"
+      }
+    },
+    "_metadata": {
+      "pipeline_version": "2.0.0",
+      "schema_version": "2.0.0",
+      "processed_at": "2026-03-04T05:18:33.076851",
+      "record_hash": "60dda3ed1508ae10019529557da31581",
+      "source_document": "TEST-CASE_Test Company_layer2",
+      "accounting_standard": "UNKNOWN",
+      "total_transformations": 11,
+      "total_flags": 15
+    }
+  },
+  "summary": {
+    "status": "completed",
+    "case_id": "TEST-CASE",
+    "company_name": "Test Company",
+    "processed_at": "2026-03-04T05:18:33.076851",
+    "fields_cleaned": 11,
+    "auto_fixed_count": 2,
+    "flagged_for_review_count": 9,
+    "risk_flag_count": 15,
+    "review_required": false,
+    "auto_reject": true,
+    "severity_summary": {
+      "LOW": 1,
+      "MEDIUM": 4,
+      "HIGH": 10,
+      "CRITICAL": 0
+    },
+    "accounting_standard": "UNKNOWN",
+    "de_ratio": null,
+    "dscr_proxy": null,
+    "is_profitable": null
+  }
+}

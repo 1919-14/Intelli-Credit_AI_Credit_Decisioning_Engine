@@ -86,6 +86,7 @@ def init_database():
             status VARCHAR(30) DEFAULT 'pending',
             current_layer INT DEFAULT 0,
             layer2_output LONGTEXT DEFAULT NULL,
+            layer3_output LONGTEXT DEFAULT NULL,
             risk_score FLOAT DEFAULT NULL,
             decision VARCHAR(50) DEFAULT NULL,
             decision_conditions TEXT DEFAULT NULL,
@@ -95,6 +96,12 @@ def init_database():
             FOREIGN KEY (created_by) REFERENCES users(id)
         )
     """)
+
+    # Add layer3_output column if it doesn't exist (for existing databases)
+    try:
+        cur.execute("ALTER TABLE applications ADD COLUMN layer3_output LONGTEXT DEFAULT NULL AFTER layer2_output")
+    except:
+        pass  # Column already exists
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS documents (
@@ -716,6 +723,13 @@ def get_application(app_id):
         except:
             pass
 
+    # Parse layer3_output if present
+    if app_data.get('layer3_output'):
+        try:
+            app_data['layer3_output'] = json.loads(app_data['layer3_output'])
+        except:
+            pass
+
     # Get documents
     cur.execute("SELECT * FROM documents WHERE application_id=%s ORDER BY uploaded_at", (app_id,))
     docs = cur.fetchall()
@@ -1034,10 +1048,10 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths):
         socketio.emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 90},
                       room=f'app_{app_id}')
 
-        # Save to DB
+        # Save Layer 2 to DB
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("UPDATE applications SET layer2_output=%s, current_layer=3, status='completed', completed_at=NOW() WHERE id=%s",
+        cur.execute("UPDATE applications SET layer2_output=%s, current_layer=2 WHERE id=%s",
                     (output_json, app_id))
         conn.commit()
         cur.close()
@@ -1057,9 +1071,62 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths):
         socketio.emit('pipeline_error', {"error": str(e), "layer": 2}, room=f'app_{app_id}')
         return
 
-    # ─── Layers 3-6: Placeholder progress (future implementation) ────────
+    # ─── Layer 3: Data Cleaning & Normalization ──────────────────────────
+    socketio.emit('layer_progress', {"layer": 3, "name": "Data Cleaning & Normalization", "status": "processing", "pct": 10},
+                  room=f'app_{app_id}')
+
+    try:
+        from layer3.layer3_adapter import run_layer3_cleaning
+
+        socketio.emit('layer_progress', {"layer": 3, "name": "Data Cleaning & Normalization", "status": "processing", "pct": 30},
+                      room=f'app_{app_id}')
+
+        layer3_result = run_layer3_cleaning(
+            layer2_output_json=output_json,
+            case_id=case_id,
+            company_name=company_name
+        )
+
+        socketio.emit('layer_progress', {"layer": 3, "name": "Data Cleaning & Normalization", "status": "processing", "pct": 80},
+                      room=f'app_{app_id}')
+
+        layer3_json = json.dumps(layer3_result, indent=2, default=str)
+
+        # Save Layer 3 to DB
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE applications SET layer3_output=%s, current_layer=3 WHERE id=%s",
+                    (layer3_json, app_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        summary = layer3_result.get('summary', {})
+        socketio.emit('layer_complete', {
+            "layer": 3,
+            "name": "Data Cleaning & Normalization",
+            "status": "done",
+            "fields_cleaned": summary.get('fields_cleaned', 0),
+            "auto_fixed": summary.get('auto_fixed_count', 0),
+            "risk_flags": summary.get('risk_flag_count', 0),
+            "review_required": summary.get('review_required', False),
+        }, room=f'app_{app_id}')
+
+        print(f"Layer 3 completed: {summary.get('fields_cleaned', 0)} fields cleaned, "
+              f"{summary.get('risk_flag_count', 0)} risk flags")
+
+    except Exception as e:
+        print(f"Layer 3 pipeline error: {e}")
+        # Layer 3 failure is non-fatal — continue with remaining layers
+        socketio.emit('layer_complete', {
+            "layer": 3,
+            "name": "Data Cleaning & Normalization",
+            "status": "error",
+            "error": str(e)
+        }, room=f'app_{app_id}')
+
+    # ─── Layers 4-6: Placeholder progress (future implementation) ────────
     layer_names = {
-        3: "Anomaly Detection",
         4: "Web Research",
         5: "Risk Scoring",
         6: "CAM Generation"
@@ -1070,6 +1137,14 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths):
         time.sleep(1.5)
         socketio.emit('layer_complete', {"layer": layer_num, "name": layer_name, "status": "done"},
                       room=f'app_{app_id}')
+
+    # Mark application as completed
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE applications SET status='completed', completed_at=NOW() WHERE id=%s", (app_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
     socketio.emit('pipeline_complete', {"app_id": app_id, "case_id": case_id, "status": "completed"},
                   room=f'app_{app_id}')
