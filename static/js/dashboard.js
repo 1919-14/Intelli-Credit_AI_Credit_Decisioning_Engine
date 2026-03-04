@@ -491,31 +491,84 @@ async function loadApplicationData(appId) {
 
 function populateFinancialView(output) {
     const extracted = output.extracted || {};
+    // Support both flat financial_data and old SRC_* sections
+    const data = extracted.financial_data || extracted;
     const tbody = document.getElementById('financialTableBody');
     if (!tbody) return;
 
+    // Helper: get value from either wrapped {value, confidence} or raw value
+    function getVal(v) {
+        if (v && typeof v === 'object' && 'value' in v) return v.value;
+        return v;
+    }
+    function getConf(v) {
+        if (v && typeof v === 'object' && 'confidence' in v) return (v.confidence * 100).toFixed(0) + '%';
+        return v !== null && v !== undefined && v !== '' ? '90%' : '—';
+    }
+    function getMethod(v) {
+        if (v && typeof v === 'object' && 'extraction_method' in v) return v.extraction_method;
+        return v !== null && v !== undefined && v !== '' ? 'llm' : '—';
+    }
+    function fmt(val) {
+        if (val === null || val === undefined || val === '') return '—';
+        if (Array.isArray(val)) return val.length > 0 ? `[${val.length} items]` : '—';
+        if (typeof val === 'object') return JSON.stringify(val).substring(0, 80);
+        if (typeof val === 'number') return val.toLocaleString('en-IN');
+        return String(val);
+    }
+    function fmtCurrency(val) {
+        if (val === null || val === undefined) return '—';
+        const n = Number(val);
+        if (isNaN(n)) return '—';
+        if (n >= 10000000) return '₹' + (n / 10000000).toFixed(2) + ' Cr';
+        if (n >= 100000) return '₹' + (n / 100000).toFixed(2) + ' L';
+        return '₹' + n.toLocaleString('en-IN');
+    }
+
+    // ─── Populate KPI Cards ─────────────────────────────────────
+    const revenue = getVal(data.total_revenue) || getVal(data.revenue_from_operations) || getVal(data.gross_receipts);
+    const pat = getVal(data.profit_after_tax) || getVal(data.net_profit_from_business);
+    const totalDebt = getVal(data.total_debt) || 0;
+    const netWorth = getVal(data.net_worth) || 0;
+    const curAssets = getVal(data.current_assets) || 0;
+    const curLiab = getVal(data.current_liabilities) || 0;
+
+    const elRev = document.getElementById('kpiRevenue');
+    const elPat = document.getElementById('kpiPat');
+    const elDe = document.getElementById('kpiDe');
+    const elCr = document.getElementById('kpiCr');
+
+    if (elRev) elRev.textContent = fmtCurrency(revenue);
+    if (elPat) elPat.textContent = fmtCurrency(pat);
+    if (elDe) elDe.textContent = netWorth ? (totalDebt / netWorth).toFixed(2) : '—';
+    if (elCr) elCr.textContent = curLiab ? (curAssets / curLiab).toFixed(2) : '—';
+
+    // ─── Populate Financial Summary Table ────────────────────────
+    // Skip list/array fields for the main table (show them separately if needed)
+    const skipKeys = ['b2b_invoices', 'export_invoices', 'large_cash_deposits', 'large_cash_withdrawals'];
     let rows = '';
-    let fieldCount = 0;
-    for (const [section, fields] of Object.entries(extracted)) {
-        for (const [key, data] of Object.entries(fields)) {
-            if (!data || typeof data !== 'object') continue;
-            const val = data.value !== null && data.value !== undefined ? data.value : '—';
-            const conf = data.confidence !== undefined ? (data.confidence * 100).toFixed(0) + '%' : '—';
-            const method = data.extraction_method || '—';
-            rows += `<tr>
-                <td><strong>${key.replace(/_/g, ' ')}</strong></td>
-                <td>${typeof val === 'object' ? JSON.stringify(val).substring(0, 60) : val}</td>
-                <td>${conf}</td>
-                <td>${method}</td>
-            </tr>`;
-            fieldCount++;
-        }
+    for (const [key, raw] of Object.entries(data)) {
+        if (skipKeys.includes(key)) continue;
+        const val = getVal(raw);
+        const conf = getConf(raw);
+        const method = getMethod(raw);
+        const displayVal = fmt(val);
+        if (displayVal === '—') continue; // Skip empty fields
+        rows += `<tr>
+            <td><strong>${key.replace(/_/g, ' ')}</strong></td>
+            <td>${displayVal}</td>
+            <td>${conf}</td>
+            <td>${method}</td>
+        </tr>`;
     }
 
     if (rows) {
         tbody.innerHTML = rows;
+    } else {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No data extracted yet</td></tr>';
     }
 }
+
 
 // ─── History ────────────────────────────────────────────────────
 async function loadHistory() {

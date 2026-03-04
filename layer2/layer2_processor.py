@@ -1,187 +1,188 @@
 import os
+import json
+import copy
 from datetime import datetime, timezone
 import fitz
 from pydantic import ValidationError
 from typing import Dict, Any, List
 
 from layer2.utils.dispatcher import DocumentDispatcher
-from layer2.extractors.unstructured import GroqExtractor
-from layer2.extractors.structured import BankStatementExtractor
-from layer2.extractors.ocr import OCRFallback
-from layer2.schemas.models import IntelliCreditJSON, GlobalMeta, ExtractionSummary, ExtractedData, DocumentMetadata
+from layer2.extractors.unstructured import GroqExtractor, GroqRateLimitError
+from layer2.extractors.ocr_fallback import EasyOCRExtractor
+from layer2.schemas.master_schema import MASTER_SCHEMA
+from layer2.schemas.models import (
+    IntelliCreditJSON, GlobalMeta, ExtractionSummary, ExtractedData, DocumentMetadata
+)
+
+DOC_TYPE_LABELS = {
+    "SRC_GST": "GST Return (GSTR-1/GSTR-3B)",
+    "SRC_ITR": "Income Tax Return (ITR-3/ITR-6)",
+    "SRC_BANK": "Bank Statement",
+    "SRC_FS": "Financial Statement (P&L / Balance Sheet)",
+    "SRC_AR": "Annual Report",
+    "SRC_BMM": "Board Meeting Minutes",
+    "SRC_RAT": "Credit Rating Report",
+    "SRC_SHP": "Shareholding Pattern",
+}
+
 
 class IntelliCreditPipeline:
     def __init__(self):
         self.dispatcher = DocumentDispatcher()
         self.llm_engine = GroqExtractor()
-        self.ocr_engine = OCRFallback()
-        
-    def process_files(self, filepaths: List[str], case_id="IC-2025-001", company_name="Unknown") -> IntelliCreditJSON:
+        self._ocr_engine = None  # Lazy-load: only created if rate limit hit
+
+    def _get_ocr_engine(self) -> EasyOCRExtractor:
+        """Lazy-init OCR engine only when actually needed."""
+        if self._ocr_engine is None:
+            print("  📷 Initialising EasyOCR fallback engine...")
+            self._ocr_engine = EasyOCRExtractor()
+        return self._ocr_engine
+
+    def _extract_full_text(self, filepath: str) -> str:
+        """Extract ALL text from PDF using PyMuPDF."""
+        text = ""
+        doc = fitz.open(filepath)
+        for page in doc:
+            text += page.get_text() + "\n"
+        doc.close()
+        return text.strip()
+
+    def process_files(
+        self,
+        filepaths: List[str],
+        case_id: str = "IC-2025-001",
+        company_name: str = "Unknown"
+    ) -> IntelliCreditJSON:
         """
-        Main runner: Takes N file paths, routes them, extracts data, and returns the Pydantic verified IntelliCreditJSON.
+        Accumulative pipeline:
+        - Start with empty master schema
+        - For each document:
+            → Try LLM (full text + current JSON)
+            → If rate limited → fall back to EasyOCR regex on remaining null fields only
+        - Final JSON has data from ALL documents
         """
-        doc_metadata_map = {}
-        extracted_sections = {}
-        
-        # Performance/Audit metrics tracking
-        total_fields = 0
-        extracted_fields = 0
-        null_fields = 0
-        low_confidence_fields = 0
-        
+        doc_metadata_map: Dict[str, DocumentMetadata] = {}
+        accumulated_json = copy.deepcopy(MASTER_SCHEMA)
+        rate_limited = False   # flip to True once limit hits — stay on OCR for rest
+
         for fp in filepaths:
-            # Phase 1: Dispatch & Classify
             meta = self.dispatcher.ingest(fp)
-            target_key = meta["target_key"] # e.g. "SRC_BANK" or "SRC_ITR"
-            
+            target_key = meta["target_key"]
+            doc_label = DOC_TYPE_LABELS.get(target_key, "Financial Document")
+            print(f"\n📄 [{meta['filename']}] → {target_key} ({doc_label})")
+
             doc_metadata_map[target_key] = DocumentMetadata(
                 filename=meta["filename"],
                 file_hash=meta["file_hash"],
                 pages=meta["pages"],
-                ocr_used=meta["ocr_required"],
-                extraction_confidence=0.0 # Will be updated dynamically
+                ocr_used=False,
+                extraction_confidence=0.0
             )
-            
-            # Phase 2: Route to specific extractors based on Document Classification
-            result_data = {}
-            avg_conf = 0.0
-            
-            if target_key == "SRC_BANK":
-                extractor = BankStatementExtractor(fp, meta["extension"])
-                result_data = extractor.extract()
-                avg_conf = 0.95
-                
-            elif target_key in ["SRC_ITR", "SRC_FS", "SRC_BMM", "SRC_RAT", "SRC_SHP", "SRC_GST", "SRC_AR"]:
-                # --- REAL DATA EXTRACTION: Unstructured Pipeline (PyMuPDF -> LLM -> Fallback) ---
-                text_content = ""
-                doc = fitz.open(fp)
-                for page in doc:
-                    text_content += page.get_text()
-                doc.close()
-                
-                # Load exact schema shape for the LLM prompt
-                import json
+
+            full_text = self._extract_full_text(fp)
+            print(f"  📝 {len(full_text)} chars extracted ({meta['pages']} pages)")
+
+            if not rate_limited:
+                # ── Primary: LLM extraction ────────────────────────────
                 try:
-                    with open("sample.json", "r") as f:
-                        sample_data = json.load(f)
-                        raw_schema = sample_data.get("extracted", {}).get(target_key, {})
-                        
-                        # Strip values so LLM doesn't just copy the sample
-                        target_schema = {}
-                        for k, v in raw_schema.items():
-                             if isinstance(v.get("value"), list):
-                                 target_schema[k] = []
-                             else:
-                                 target_schema[k] = None
-                                 
+                    accumulated_json = self.llm_engine.extract_and_fill(
+                        full_text=full_text,
+                        current_json=accumulated_json,
+                        doc_type_hint=doc_label
+                    )
+                    doc_metadata_map[target_key].extraction_confidence = 0.90
+
+                except GroqRateLimitError as e:
+                    print(f"  ⚠️  Groq rate limit hit: {e}")
+                    print(f"  🔄 Switching to EasyOCR fallback for remaining documents...")
+                    rate_limited = True
+                    # Fall through to OCR block below
+
                 except Exception as e:
-                    print(f"Failed to load sample.json schema for {target_key}: {e}")
-                    target_schema = {}
-                
-                # Attempt LLM Extraction
-                result_data = self.llm_engine.extract_json_schema(text_content, target_schema)
-                
-                # The OCR Fallback Mechanism
-                if not result_data or meta["ocr_required"]:
-                    print(f"[{meta['filename']}] Falling back to Heavy OCR Engine...")
-                    ocr_res = self.ocr_engine.extract_text(fp)
-                    # Note: Passing OCR text through the exact same schema prompt
-                    combined_ocr_text = " ".join([b["text"] for b in ocr_res["blocks"]])
-                    result_data = self.llm_engine.extract_json_schema(combined_ocr_text, target_schema)
-                    avg_conf = ocr_res["ocr_confidence_score"]
-                else:
-                    avg_conf = 0.90 # LLM assumption
-            else:
-                avg_conf = 0.90
-                    
-            # --- Schema Hydration for Exact 1300-Line Footprint ---
-            # Now that LLM extracts correctly and Pydantic filters out hallucinations,
-            # we pad the remaining missing elements with the pristine skeleton from sample.json
-            import json
-            try:
-                with open("sample.json", "r") as f:
-                    sample_data = json.load(f)
-                    skeleton = sample_data.get("extracted", {}).get(target_key, {})
-                    
-                    def _nullify(obj):
-                        """Recursively strip values → None, preserving schema keys & structure."""
-                        if isinstance(obj, dict):
-                            out = {}
-                            for k, v in obj.items():
-                                if k == "value":
-                                    # Null out actual values — lists become [], scalars become None
-                                    out[k] = [] if isinstance(v, list) else None
-                                elif k == "confidence":
-                                    out[k] = 0.0  # Mark as zero-confidence placeholder
-                                else:
-                                    out[k] = _nullify(v)
-                            return out
-                        elif isinstance(obj, list):
-                            return [_nullify(item) for item in obj]
-                        return obj
+                    print(f"  ❌ LLM error: {e}")
+                    print(f"  🔄 Falling back to EasyOCR for this document...")
+                    rate_limited = True
+                    # Fall through to OCR block below
 
-                    for sk, sv in skeleton.items():
-                        if sk not in result_data:
-                            # Pad with nullified version — structure only, no sample values
-                            result_data[sk] = _nullify(sv)
-                        # For existing keys with empty extraction, keep nulls (don't backfill)
-                        elif isinstance(result_data[sk], dict) and not result_data[sk].get("value"):
-                             result_data[sk]["value"] = None
-            except Exception as e:
-                print(f"Failed to pad {target_key} schema: {e}")
-                    
-            if target_key in extracted_sections:
-                extracted_sections[target_key].update(result_data)
-            else:
-                extracted_sections[target_key] = result_data
-            doc_metadata_map[target_key].extraction_confidence = avg_conf
+            if rate_limited:
+                # ── Fallback: EasyOCR regex on remaining null fields ──
+                ocr = self._get_ocr_engine()
+                try:
+                    # Try to get better OCR text if PyMuPDF text is sparse
+                    pymupdf_text = full_text
+                    char_count = len(pymupdf_text.replace(" ", ""))
+                    if char_count < 500:
+                        print(f"  📷 Sparse text ({char_count} chars) — running EasyOCR on images...")
+                        ocr_text = ocr.extract_text_from_pdf(fp)
+                        combined_text = pymupdf_text + "\n" + ocr_text
+                    else:
+                        combined_text = pymupdf_text
 
-            # Tally metrics for this document's keys
-            for k, v_dict in result_data.items():
-                total_fields += 1
-                if not v_dict.get("value") and v_dict.get("value") != 0:
-                     null_fields += 1
-                else:
-                     extracted_fields += 1
-                 
-                if v_dict.get("confidence", 0.0) < 0.7:
-                     low_confidence_fields += 1
-            
-        # Compile global summary
+                    before_filled = sum(
+                        1 for v in accumulated_json.values()
+                        if v is not None and v != [] and v != ""
+                    )
+                    accumulated_json = ocr.fill_remaining_fields(combined_text, accumulated_json)
+                    after_filled = sum(
+                        1 for v in accumulated_json.values()
+                        if v is not None and v != [] and v != ""
+                    )
+                    newly_filled = after_filled - before_filled
+                    print(f"  🔍 EasyOCR filled {newly_filled} additional fields")
+                    doc_metadata_map[target_key].ocr_used = True
+                    doc_metadata_map[target_key].extraction_confidence = 0.70
+
+                except Exception as ocr_err:
+                    print(f"  ❌ EasyOCR also failed: {ocr_err}")
+
+            filled = sum(
+                1 for v in accumulated_json.values()
+                if v is not None and v != [] and v != ""
+            )
+            total = len(accumulated_json)
+            print(f"  ✅ Progress: {filled}/{total} fields filled "
+                  f"({'LLM' if not rate_limited else 'OCR fallback'})")
+
+        # ── Final summary ──────────────────────────────────────────
+        filled = sum(1 for v in accumulated_json.values()
+                     if v is not None and v != [] and v != "")
+        total = len(accumulated_json)
+        null_count = total - filled
+
+        print(f"\n{'='*50}")
+        print(f"📊 FINAL: {filled}/{total} fields filled ({round(filled/total*100,1)}%)")
+        print(f"{'='*50}")
+
         summary = ExtractionSummary(
-            total_fields_attempted=total_fields,
-            fields_extracted=extracted_fields,
-            fields_null=null_fields,
-            fields_low_confidence=low_confidence_fields,
-            human_review_queue=1 if low_confidence_fields > 5 else 0,
-            overall_quality_score=round((extracted_fields / total_fields * 100) if total_fields else 0, 1)
+            total_fields_attempted=total,
+            fields_extracted=filled,
+            fields_null=null_count,
+            overall_quality_score=round(filled / max(total, 1) * 100, 1)
         )
-        
-        # Compile final JSON structure using Pydantic Validation
+
         global_meta = GlobalMeta(
             case_id=case_id,
             company_name=company_name,
             extraction_timestamp=datetime.now(timezone.utc),
-            schema_version="2.1",
-            pipeline_version="1.0.0",
+            schema_version="3.0",
+            pipeline_version="3.1.0",
             llm_model="meta-llama/llama-4-scout-17b-16e-instruct",
             llm_provider="groq",
-            ocr_engine="pymupdf_primary_easyocr_fallback",
+            ocr_engine="pymupdf + easyocr_fallback",
             documents_processed=doc_metadata_map,
             extraction_summary=summary
         )
-        
-        # Note: If Pydantic fails validation here, it prevents hallucinated schemas from leaking to Layer 3
+
         try:
-             final_json = IntelliCreditJSON(
-                 meta=global_meta,
-                 extracted=ExtractedData(**extracted_sections)
-             )
-             return final_json
+            return IntelliCreditJSON(
+                meta=global_meta,
+                extracted=ExtractedData(financial_data=accumulated_json)
+            )
         except ValidationError as e:
-             raise Exception(f"CRITICAL: Schema validation failed. Hallucinated or malformed data detected: {e}")
+            raise Exception(f"Schema validation failed: {e}")
+
 
 if __name__ == "__main__":
-    # Test runner for our new components
     pipeline = IntelliCreditPipeline()
-    print("Pipeline initialized successfully!")
+    print("Pipeline v3.1 (LLM + EasyOCR fallback) initialized!")

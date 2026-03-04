@@ -3,6 +3,7 @@ import json
 import fitz # type: ignore
 from dotenv import load_dotenv
 from layer2.layer2_processor import IntelliCreditPipeline
+from layer3.layer3_adapter import run_layer3_cleaning
 
 load_dotenv()
 
@@ -81,6 +82,21 @@ def main():
             f.write(output_json)
             
         print("Saved full output to layer2_test_output.json")
+        
+        print("\n--- Running Layer 3 (Data Cleaning & Normalization) ---")
+        layer3_result = run_layer3_cleaning(
+            layer2_output_json=output_json,
+            case_id="TEST-CASE",
+            company_name="Test Company"
+        )
+        summary = layer3_result["summary"]
+        print(f"Layer 3 Status: {summary['status']}")
+        print(f"Fields Cleaned: {summary['fields_cleaned']}")
+        print(f"Risk Flags: {summary['risk_flag_count']}")
+        
+        with open("layer3_test_output.json", "w", encoding="utf-8") as f:
+            json.dump(layer3_result, f, indent=2, default=str)
+        print("Saved Layer 3 output to layer3_test_output.json")
         
     except Exception as e:
         print(f"Pipeline Failed: {e}")
