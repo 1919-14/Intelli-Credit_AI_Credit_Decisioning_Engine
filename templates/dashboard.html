@@ -88,11 +88,6 @@
                 <span class="nav-icon"><i data-lucide="clock"></i></span>
                 <span class="nav-label">History</span>
             </a>
-            <a class="nav-item" id="navCheckerQueue" onclick="openCheckerQueueModal()"
-                style="display:none; cursor:pointer;">
-                <span class="nav-icon"><i data-lucide="shield-check"></i></span>
-                <span class="nav-label">Pending Approvals</span>
-            </a>
             <a class="nav-item" data-section="users" onclick="showSection('users')" id="navUsers" style="display:none;">
                 <span class="nav-icon"><i data-lucide="users"></i></span>
                 <span class="nav-label">User Management</span>
@@ -213,8 +208,6 @@
                 </div>
             </div>
         </section>
-
-
 
         <!-- ═══════════════ SECTION: DATA INGESTION ═══════════════ -->
         <section class="content-section" id="section-ingestion">
@@ -791,152 +784,6 @@
                 <div id="l5AuditBody" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;">
                 </div>
             </div>
-
-            <!-- ── Layer 6: Human Verification Trigger Button ── -->
-            <div id="l6TriggerContainer" style="display:none; margin-top:2rem; text-align:center;">
-                <button class="l6-trigger-btn" onclick="showL6ActionBar()">
-                    <i data-lucide="shield-check" style="width:20px;height:20px;"></i>
-                    🔐 Proceed to Human Verification (Layer 6)
-                </button>
-                <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.5rem;">
-                    RBI Digital Lending Compliance — Officer sign-off mandatory before CAM generation
-                </div>
-            </div>
-
-            <!-- ── Layer 6: Officer Sign-off Action Bar ── -->
-            <div id="l6ActionBar" style="display:none; margin-top:2rem;">
-                <div class="l6-action-bar">
-                    <!-- Header -->
-                    <div
-                        style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.25rem;">
-                        <div>
-                            <h3 style="margin:0 0 0.25rem;font-size:1.1rem;">
-                                <i data-lucide="pen-tool"
-                                    style="width:18px;height:18px;display:inline-block;vertical-align:-3px;margin-right:0.4rem;color:#6366f1;"></i>
-                                Layer 6: Credit Officer Sign-off
-                            </h3>
-                            <p style="color:var(--text-secondary);font-size:0.85rem;margin:0;">
-                                Review the ML decision. Accept to proceed to CAM, or explicitly Override with
-                                justification.
-                            </p>
-                        </div>
-                        <span
-                            style="padding:0.3rem 0.8rem;border-radius:6px;font-size:0.7rem;font-weight:600;background:rgba(99,102,241,0.15);color:#818cf8;text-transform:uppercase;letter-spacing:0.05em;">
-                            RBI Mandated
-                        </span>
-                    </div>
-
-                    <!-- AI Recommendation Recap -->
-                    <div id="l6AiRecap" class="l6-recap-card" style="margin-bottom:1.25rem;">
-                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.75rem;">
-                            <div style="text-align:center;">
-                                <div
-                                    style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
-                                    AI Score</div>
-                                <div id="l6RecapScore" style="font-size:1.4rem;font-weight:800;">—</div>
-                            </div>
-                            <div style="text-align:center;">
-                                <div
-                                    style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
-                                    Grade</div>
-                                <div id="l6RecapGrade" style="font-size:1.4rem;font-weight:800;">—</div>
-                            </div>
-                            <div style="text-align:center;">
-                                <div
-                                    style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
-                                    Decision</div>
-                                <div id="l6RecapDecision" style="font-size:1.1rem;font-weight:700;">—</div>
-                            </div>
-                            <div style="text-align:center;">
-                                <div
-                                    style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
-                                    PD %</div>
-                                <div id="l6RecapPD" style="font-size:1.1rem;font-weight:700;">—</div>
-                            </div>
-                            <div style="text-align:center;">
-                                <div
-                                    style="font-size:0.65rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
-                                    Limit</div>
-                                <div id="l6RecapLimit" style="font-size:1.1rem;font-weight:700;">—</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Maker-Checker Notice -->
-                    <div id="l6CheckerNotice"
-                        style="display:none;background:rgba(245,158,11,0.1);border-left:3px solid #f59e0b;padding:0.6rem 0.8rem;margin-bottom:1rem;border-radius:0 6px 6px 0;font-size:0.82rem;color:#d97706;">
-                        <i data-lucide="alert-triangle"
-                            style="width:14px;height:14px;display:inline-block;vertical-align:-2px;margin-right:0.3rem;"></i>
-                        <strong>Maker-Checker Required:</strong> Loan amount exceeds ₹200L threshold. Your decision will
-                        be routed to a Senior Credit Manager for final 4-eyes approval.
-                    </div>
-
-                    <!-- Action Buttons -->
-                    <div id="l6ButtonGroup" style="display:flex;gap:0.75rem;flex-wrap:wrap;">
-                        <button class="btn" onclick="submitL6Decision('ACCEPT')"
-                            style="background:#10b981;border-color:#10b981;color:#fff;padding:0.6rem 1.4rem;font-weight:600;font-size:0.9rem;border-radius:8px;">
-                            <i data-lucide="check-circle"
-                                style="width:16px;height:16px;display:inline-block;vertical-align:-2px;margin-right:0.3rem;"></i>
-                            ✅ Accept AI Decision
-                        </button>
-                        <button class="btn btn-outline" onclick="showL6OverrideModal()"
-                            style="border-color:#f59e0b;color:#d97706;padding:0.6rem 1.4rem;font-weight:600;font-size:0.9rem;border-radius:8px;">
-                            <i data-lucide="edit-3"
-                                style="width:16px;height:16px;display:inline-block;vertical-align:-2px;margin-right:0.3rem;"></i>
-                            ✏️ Override Decision
-                        </button>
-                        <button class="btn btn-outline"
-                            onclick="showToast('🔄 Re-run capability will route back to Layer 4+5 with new info. (Coming in v2)')"
-                            style="border-color:#6366f1;color:#818cf8;padding:0.6rem 1.4rem;font-weight:600;font-size:0.9rem;border-radius:8px;">
-                            <i data-lucide="refresh-cw"
-                                style="width:16px;height:16px;display:inline-block;vertical-align:-2px;margin-right:0.3rem;"></i>
-                            🔄 Re-Run with New Info
-                        </button>
-                    </div>
-
-                    <!-- Digital Signature Section (hidden until decision is made) -->
-                    <div id="l6SignatureSection"
-                        style="display:none;margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid rgba(255,255,255,0.06);">
-                        <div
-                            style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
-                            <div>
-                                <div style="font-size:0.85rem;font-weight:600;margin-bottom:0.2rem;">🖋️ Digital
-                                    Signature Required</div>
-                                <div style="font-size:0.78rem;color:var(--text-secondary);">Legally binds you to this
-                                    decision. CAM becomes tamper-evident after signing.</div>
-                            </div>
-                            <button id="btnSignL6" class="btn" onclick="signL6Decision()"
-                                style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;color:#fff;padding:0.6rem 1.6rem;font-weight:700;font-size:0.9rem;border-radius:8px;">
-                                <i data-lucide="fingerprint"
-                                    style="width:16px;height:16px;display:inline-block;vertical-align:-2px;margin-right:0.3rem;"></i>
-                                Digitally Sign & Finalize
-                            </button>
-                        </div>
-                        <!-- Signature Badge (shows after signing) -->
-                        <div id="l6SignatureBadge" class="l6-signature-badge" style="display:none;margin-top:0.75rem;">
-                            <div style="display:flex;align-items:center;gap:0.6rem;">
-                                <span style="font-size:1.2rem;">✅</span>
-                                <div>
-                                    <div style="font-size:0.82rem;font-weight:600;color:#10b981;">Digitally Signed</div>
-                                    <div id="l6SignatureHash"
-                                        style="font-size:0.7rem;font-family:monospace;color:var(--text-secondary);word-break:break-all;">
-                                    </div>
-                                    <div id="l6SignatureTime" style="font-size:0.7rem;color:var(--text-secondary);">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Decision Made Badge (shows after full completion) -->
-                    <div id="l6CompleteBadge"
-                        style="display:none;margin-top:1rem;padding:0.8rem;background:rgba(16,185,129,0.08);border-radius:8px;border-left:3px solid #10b981;text-align:center;">
-                        <span style="font-size:0.9rem;font-weight:600;color:#10b981;">✅ Decision finalized & digitally
-                            signed. Proceeding to Layer 7 (CAM Generation)...</span>
-                    </div>
-                </div>
-            </div>
-
         </section>
 
         <!-- ═══════════════ SECTION: RISK SCORING (expanded Layer 5) — REMOVED, merged into scoring ═══════════════ -->
@@ -1095,38 +942,6 @@
                 </div>
                 <div id="l5AuditBody" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;">
                 </div>
-            </div>
-
-            <!-- Layer 6: Officer Sign-off Action Bar -->
-            <div id="l6ActionBar"
-                style="display:none; margin-top: 2rem; background: var(--surface-card); border-top: 4px solid var(--accent-blue); padding: 1.5rem; border-radius: 8px;">
-                <div style="display:flex; justify-content: space-between; align-items: flex-start;">
-                    <div>
-                        <h3 style="margin-bottom: 0.25rem;"><i data-lucide="pen-tool"
-                                class="w-5 h-5 inline-block text-blue-500 mr-2"></i>Layer 6: Credit Officer Sign-off
-                        </h3>
-                        <p style="color: var(--text-secondary); font-size: 0.85rem;">Review the ML decision. Accept to
-                            proceed to CAM generation, or explicitly Override with justification.</p>
-                        <div id="l6CheckerNotice"
-                            style="display:none; background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 0.5rem; margin-top: 0.75rem; font-size: 0.8rem; color: #d97706;">
-                            <i data-lucide="info" class="w-4 h-4 inline-block mr-1"></i> Loan amount exceeds ₹200L
-                            threshold. Your decision will be routed to a Senior Credit Manager for final Maker-Checker
-                            approval.
-                        </div>
-                    </div>
-                    <div style="display:flex; gap: 1rem;">
-                        <button class="btn btn-outline" style="border-color: #f59e0b; color: #d97706;"
-                            onclick="showL6OverrideModal()">
-                            <i data-lucide="edit-3"></i> Override Decision
-                        </button>
-                        <button class="btn btn-primary" onclick="submitL6Decision('ACCEPT')"
-                            style="background: #10b981; border-color: #10b981;">
-                            <i data-lucide="check-circle"></i> Accept AI Decision
-                        </button>
-                    </div>
-                </div>
-            </div>
-
         </section><!-- end section-risk -->
 
         <!-- ═══════════════ SECTION: CAM REPORT ═══════════════ -->
@@ -1473,78 +1288,6 @@
                 <button class="btn btn-primary" id="btnSubmitHitl3" onclick="submitL4Hitl3()">
                     <i data-lucide="check-circle"></i> Submit Overrides & Complete Layer 4
                 </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ═══════════════ L6 HITL: OFFICER OVERRIDE MODAL ═══════════════ -->
-    <div class="modal-overlay" id="modalL6Override" style="display:none; z-index:1100;">
-        <div class="modal">
-            <div class="modal-header"
-                style="background: rgba(245, 158, 11, 0.1); border-bottom: 1px solid rgba(245, 158, 11, 0.2);">
-                <div>
-                    <h3 style="color: #d97706;"><i data-lucide="pencil" class="w-5 h-5 inline-block mr-2"></i>Override
-                        AI Decision</h3>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.25rem;">
-                        As per RBI guidelines, overriding the ML model requires a mandatory justification log.
-                    </p>
-                </div>
-                <button class="modal-close" onclick="closeL6OverrideModal()">×</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.4rem;">Override
-                        Category</label>
-                    <select id="l6OverrideCategory" class="input" style="width:100%;">
-                        <option value="Policy Exception">Policy Exception</option>
-                        <option value="Risk Appetite">Risk Appetite Alignment</option>
-                        <option value="Client Relationship">Strategic Client Relationship</option>
-                        <option value="New Information Found">New Material Information</option>
-                        <option value="Other">Other (Specify in notes)</option>
-                    </select>
-                </div>
-                <div style="margin-top: 1rem;">
-                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.4rem;">
-                        Override Justification (Minimum 50 chars)
-                    </label>
-                    <textarea id="l6OverrideReason" class="input" rows="4"
-                        placeholder="Detail exactly why the AI decision is being overridden..."></textarea>
-                    <div id="l6OverrideCharCount"
-                        style="font-size:0.75rem; color: #f59e0b; margin-top:0.4rem; text-align:right;">
-                        0 / 50 characters minimum
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer" style="justify-content: flex-end; gap: 1rem;">
-                <button class="btn btn-outline" onclick="closeL6OverrideModal()">Cancel</button>
-                <button class="btn btn-primary" id="btnSubmitL6Override" onclick="submitL6Override()" disabled>
-                    <i data-lucide="check"></i> Submit Override
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ═══════════════ L6: CHECKER QUEUE MODAL ═══════════════ -->
-    <div class="modal-overlay" id="modalCheckerQueue" style="display:none; z-index:1100;">
-        <div class="modal modal-lg">
-            <div class="modal-header">
-                <div>
-                    <h3 style="margin-bottom: 0.25rem;"><i data-lucide="shield-check"
-                            class="w-5 h-5 inline-block mr-2 text-blue-500"></i>Pending Checker Approvals</h3>
-                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0;">
-                        Applications waiting for Senior Credit Manager review (Limit > ₹200L).
-                    </p>
-                </div>
-                <button class="modal-close" onclick="closeModal('modalCheckerQueue')">×</button>
-            </div>
-            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
-                <div style="margin-bottom: 1rem; text-align: right;">
-                    <button class="btn btn-outline btn-sm" onclick="loadCheckerQueue()"><i data-lucide="refresh-cw"></i>
-                        Refresh</button>
-                </div>
-                <div class="doc-queue" id="checkerQueueContainer">
-                    <div class="empty-state">No pending approvals require your attention.</div>
-                </div>
             </div>
         </div>
     </div>

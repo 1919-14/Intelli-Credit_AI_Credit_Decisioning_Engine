@@ -34,7 +34,6 @@ def build_output_package(
             "tenure_months": loan_result.get("loan_structure", {}).get("term_loan", {}).get("tenure_months"),
             "conditions": decision_result.get("conditions", []),
             "covenants": decision_result.get("covenants", []),
-            "llm_decision_summary": decision_result.get("llm_decision_summary", ""),
         },
 
         # ─── Score Breakdown ───────────────────────────────

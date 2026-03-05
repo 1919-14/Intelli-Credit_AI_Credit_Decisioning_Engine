@@ -65,14 +65,6 @@ function applyPermissionGating(perms) {
             el.style.display = 'none';
         }
     });
-
-    // Special Checker Queue Visibility
-    if (isSuperAdmin || perms.includes('APPROVE_LARGE_LOAN')) {
-        const navItem = document.getElementById('navCheckerQueue');
-        if (navItem) {
-            navItem.style.display = '';
-        }
-    }
 }
 
 
@@ -91,26 +83,11 @@ function initSocket() {
         updateLayerStatus(data.layer, 'done');
         // Enable this layer's section in the sidebar
         enableLayerNav(data.layer);
-
-        // If Layer 5 just finished, reveal the manual Layer 6 sign-off tools
-        if (data.layer === 5 && STATE.currentApp) {
-            const l6Trigger = document.getElementById('l6TriggerContainer');
-            if (l6Trigger) {
-                l6Trigger.style.display = 'block';
-            }
-        }
-
         // Auto-show the next layer after a brief pause
         setTimeout(() => {
             const nextLayer = data.layer + 1;
-            if (nextLayer <= 7 && data.layer !== 5) { // Stop auto-progress if manual action required in L6
+            if (nextLayer <= 7) {
                 updateLayerStatus(nextLayer, 'processing', 0);
-            } else if (data.layer === 5) {
-                const statusEl = document.getElementById('activeAppStatus');
-                if (statusEl) {
-                    statusEl.innerHTML = '<span class="status-dot"></span> Awaiting Officer Review';
-                    statusEl.style.color = '#f59e0b';
-                }
             }
         }, 1200);
     });
@@ -568,51 +545,6 @@ async function loadApplicationData(appId) {
         // Populate Risk Scoring (Layer 5) if available
         if (data.layer5_output) {
             populateRiskScoringView(data.layer5_output);
-
-            // Show L6 trigger if Layer 5 done but L6 not yet finalized
-            const status = (data.status || '').toLowerCase();
-            const l6Done = ['approved', 'overridden', 'completed'].includes(status);
-            const l6Pending = status === 'pending_checker';
-
-            if (data.layer6_output && l6Done) {
-                // Already finalized — show completed badge
-                const l6Bar = document.getElementById('l6ActionBar');
-                if (l6Bar) {
-                    l6Bar.style.display = 'block';
-                    const btnGroup = document.getElementById('l6ButtonGroup');
-                    if (btnGroup) btnGroup.style.display = 'none';
-                    const completeBadge = document.getElementById('l6CompleteBadge');
-                    if (completeBadge) completeBadge.style.display = 'block';
-                    const sigBadge = document.getElementById('l6SignatureBadge');
-                    if (sigBadge) {
-                        sigBadge.style.display = 'block';
-                        const hashEl = document.getElementById('l6SignatureHash');
-                        const l6Out = typeof data.layer6_output === 'string' ? JSON.parse(data.layer6_output) : data.layer6_output;
-                        if (hashEl && l6Out.digital_signature_hash) {
-                            const h = l6Out.digital_signature_hash;
-                            hashEl.textContent = `SHA-256: ${h.substring(0, 16)}…${h.substring(h.length - 8)}`;
-                        }
-                    }
-                    const sigSection = document.getElementById('l6SignatureSection');
-                    if (sigSection) sigSection.style.display = 'block';
-                }
-            } else if (l6Pending) {
-                const l6Bar = document.getElementById('l6ActionBar');
-                if (l6Bar) {
-                    l6Bar.style.display = 'block';
-                    const btnGroup = document.getElementById('l6ButtonGroup');
-                    if (btnGroup) btnGroup.style.display = 'none';
-                    const completeBadge = document.getElementById('l6CompleteBadge');
-                    if (completeBadge) {
-                        completeBadge.style.display = 'block';
-                        completeBadge.innerHTML = '<span style="font-size:0.9rem;font-weight:600;color:#f59e0b;">⏳ Awaiting Senior Credit Manager Maker-Checker approval.</span>';
-                    }
-                }
-            } else if (!l6Done) {
-                // Show trigger button
-                const l6Trigger = document.getElementById('l6TriggerContainer');
-                if (l6Trigger) l6Trigger.style.display = 'block';
-            }
         }
     } catch (e) {
         console.error('Failed to load application data', e);
@@ -1965,51 +1897,6 @@ function populateRiskScoringView(l5) {
 
         // KPI tiles
         const score = ds.final_credit_score || 0;
-
-        // ─── Legacy Decision Summary (Updated for LLM Bullets) ──────
-        const dSumArea = document.getElementById('decisionSummary');
-        if (dSumArea) {
-            let summaryHtml = '';
-            if (ds.llm_decision_summary) {
-                // Parse simple markdown: **bold**, __bold__, *italic*, _italic_
-                let parsedMd = ds.llm_decision_summary
-                    .replace(/(\*\*|__)(.*?)\1/g, '<strong>$2</strong>')
-                    .replace(/(\*|_)(.*?)\1/g, '<em>$2</em>');
-
-                // Fix LLM markdown sometimes appearing purely on one line (e.g. "Text * bullet * bullet")
-                parsedMd = parsedMd.replace(/(^|\s)([\*|\-])\s/g, '\n- ');
-
-                const lines = parsedMd.split('\n').map(l => l.trim()).filter(l => l);
-                let inList = false;
-                let finalHtml = '';
-
-                for (let line of lines) {
-                    if (line.startsWith('-')) {
-                        if (!inList) {
-                            finalHtml += '<ul style="list-style-type:disc; padding-left:1.5rem; margin-top:0.5rem; margin-bottom:0.5rem; line-height:1.6; font-size:0.9rem; color:var(--text-secondary);">';
-                            inList = true;
-                        }
-                        finalHtml += `<li>${line.substring(1).trim()}</li>`;
-                    } else {
-                        if (inList) {
-                            finalHtml += '</ul>';
-                            inList = false;
-                        }
-                        finalHtml += `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6; margin-bottom:0.5rem;">${line}</p>`;
-                    }
-                }
-                if (inList) finalHtml += '</ul>';
-
-                summaryHtml = finalHtml || `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6;">${ds.llm_decision_summary}</p>`;
-            } else {
-                // Fallback to basic text if no LLM summary
-                const conditionsText = (ds.conditions || []).length ? ` Conditions: ${ds.conditions.join(', ')}` : '';
-                summaryHtml = `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6;">The AI Engine has determined a <strong>${ds.decision}</strong> decision with a score of ${score}.${conditionsText}</p>`;
-            }
-
-            dSumArea.innerHTML = summaryHtml;
-            dSumArea.classList.remove('empty-state');
-        }
         const bandColors = { 'Very Low Risk': '#10b981', 'Low Risk': '#6366f1', 'Moderate Risk': '#f59e0b', 'High Risk': '#ef4444', 'Very High Risk': '#ef4444' };
         const bandColor = bandColors[ds.risk_band] || '#6b7280';
 
@@ -2284,15 +2171,6 @@ function populateRiskScoringView(l5) {
             </div>`
         ).join('');
     }
-
-    // ─── Layer 6 Trigger Un-hide ─────────────────────────────────────────
-    if (STATE.currentApp && STATE.currentApp.current_layer >= 5) {
-        // Only show if the loan isn't already fully approved or overridden
-        if (!['approved', 'overridden', 'completed'].includes(STATE.currentApp.status)) {
-            const l6Trigger = document.getElementById('l6TriggerContainer');
-            if (l6Trigger) l6Trigger.style.display = 'block';
-        }
-    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -2461,283 +2339,5 @@ async function generateShapExplanation() {
             btn.innerHTML = `<i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Regenerate`;
             if (window.lucide) lucide.createIcons();
         }
-    }
-}
-
-// ─── Layer 6 Logic (Maker-Checker & Overrides) ────────────────────────────────
-
-async function loadCheckerQueue() {
-    const list = document.getElementById('checkerQueueContainer');
-    if (!list) return;
-
-    try {
-        const res = await fetch('/api/applications/pending_checker');
-        const data = await res.json();
-
-        if (data.error) throw new Error(data.error);
-
-        if (!data.length) {
-            list.innerHTML = '<div class="empty-state">No pending approvals require your attention.</div>';
-            return;
-        }
-
-        list.innerHTML = data.map(app => `
-            <div class="doc-item" style="border-left: 3px solid var(--accent-blue); padding: 0.75rem; background: var(--surface-card); border-radius: 6px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <div style="font-weight: 600; font-size: 0.95rem;">${app.company_name}</div>
-                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Case ID: ${app.case_id} — Waiting for Checker</div>
-                </div>
-                <button class="btn btn-primary btn-sm" onclick="loadCheckerApp(${app.id})">Review & Sign-Off</button>
-            </div>
-        `).join('');
-    } catch (e) {
-        showToast('❌ Failed to fetch checker queue: ' + e.message);
-    }
-}
-
-async function loadCheckerApp(appId) {
-    if (!appId) return;
-    showToast('Loading application for review...');
-    await loadApplicationData(appId);
-    switchSection('scoring');
-
-    // Explicitly unhide the action bar since it might not be triggered by socket if already done
-    const l6Bar = document.getElementById('l6ActionBar');
-    if (l6Bar) l6Bar.style.display = 'block';
-}
-
-function showL6OverrideModal() {
-    document.getElementById('l6OverrideReason').value = '';
-    document.getElementById('l6OverrideCharCount').textContent = '0 / 50 characters minimum';
-    document.getElementById('l6OverrideCharCount').style.color = '#ef4444';
-    document.getElementById('btnSubmitL6Override').disabled = true;
-
-    document.getElementById('l6OverrideReason').addEventListener('input', function () {
-        const len = this.value.trim().length;
-        const cnt = document.getElementById('l6OverrideCharCount');
-        const btn = document.getElementById('btnSubmitL6Override');
-
-        cnt.textContent = `${len} / 50 characters minimum`;
-        if (len >= 50) {
-            cnt.style.color = '#10b981';
-            btn.disabled = false;
-        } else {
-            cnt.style.color = '#ef4444';
-            btn.disabled = true;
-        }
-    });
-
-    document.getElementById('modalL6Override').style.display = 'flex';
-}
-
-function closeL6OverrideModal() {
-    document.getElementById('modalL6Override').style.display = 'none';
-}
-
-async function submitL6Decision(actionType, overrideReason = '', overrideCategory = '') {
-    const appId = STATE.currentApp?.id;
-    if (!appId) {
-        showToast('❌ No active application');
-        return;
-    }
-
-    try {
-        const res = await fetch(`/api/applications/${appId}/layer6_decision`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: actionType,
-                reason: overrideReason,
-                category: overrideCategory
-            })
-        });
-
-        const data = await res.json();
-
-        if (data.error) {
-            showToast('❌ Error: ' + data.error);
-            return;
-        }
-
-        showToast('✅ ' + (data.message || 'Decision logged successfully'));
-
-        if (actionType === 'OVERRIDE') closeL6OverrideModal();
-
-        // Store the decision action for signing
-        STATE._l6DecisionAction = actionType;
-        STATE._l6DecisionReason = overrideReason;
-        STATE._l6DecisionCategory = overrideCategory;
-
-        if (data.status === 'pending_checker') {
-            // Hide buttons, show pending message
-            const btnGroup = document.getElementById('l6ButtonGroup');
-            if (btnGroup) btnGroup.style.display = 'none';
-            const completeBadge = document.getElementById('l6CompleteBadge');
-            if (completeBadge) {
-                completeBadge.style.display = 'block';
-                completeBadge.innerHTML = '<span style="font-size:0.9rem;font-weight:600;color:#f59e0b;">⏳ Routed to Senior Credit Manager for Maker-Checker approval. Decision is pending.</span>';
-            }
-            loadCheckerQueue();
-            return;
-        }
-
-        // Show digital signature section, hide buttons
-        const btnGroup = document.getElementById('l6ButtonGroup');
-        if (btnGroup) btnGroup.style.display = 'none';
-        const sigSection = document.getElementById('l6SignatureSection');
-        if (sigSection) sigSection.style.display = 'block';
-        if (window.lucide) lucide.createIcons();
-
-    } catch (e) {
-        console.error(e);
-        showToast('❌ Failed to submit decision: ' + e.message);
-    }
-}
-
-function submitL6Override() {
-    const reason = document.getElementById('l6OverrideReason').value.trim();
-    const category = document.getElementById('l6OverrideCategory').value;
-
-    if (reason.length < 50) {
-        showToast('❌ Override reason must be extensive (min 50 chars)');
-        return;
-    }
-
-    submitL6Decision('OVERRIDE', reason, category);
-}
-
-// ─── Digital Signature Simulation (SHA-256 via Web Crypto API) ─────────
-async function signL6Decision() {
-    const appId = STATE.currentApp?.id;
-    if (!appId) { showToast('❌ No active application'); return; }
-
-    const btn = document.getElementById('btnSignL6');
-    if (btn) { btn.disabled = true; btn.textContent = 'Signing...'; }
-
-    try {
-        // Build payload for hashing
-        const payload = JSON.stringify({
-            app_id: appId,
-            action: STATE._l6DecisionAction || 'ACCEPT',
-            reason: STATE._l6DecisionReason || '',
-            category: STATE._l6DecisionCategory || '',
-            officer: STATE.session?.full_name || 'Unknown',
-            timestamp: new Date().toISOString(),
-        });
-
-        // SHA-256 via Web Crypto API
-        const encoder = new TextEncoder();
-        const data = encoder.encode(payload);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-        // Send signature to backend
-        await fetch(`/api/applications/${appId}/layer6_decision`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: STATE._l6DecisionAction || 'ACCEPT',
-                reason: STATE._l6DecisionReason || '',
-                category: STATE._l6DecisionCategory || '',
-                digital_signature_hash: hashHex,
-            })
-        });
-
-        // Show signature badge
-        const badge = document.getElementById('l6SignatureBadge');
-        if (badge) badge.style.display = 'block';
-        const hashEl = document.getElementById('l6SignatureHash');
-        if (hashEl) hashEl.textContent = `SHA-256: ${hashHex.substring(0, 16)}…${hashHex.substring(hashHex.length - 8)}`;
-        const timeEl = document.getElementById('l6SignatureTime');
-        if (timeEl) timeEl.textContent = `Signed at: ${new Date().toLocaleString('en-IN')}`;
-
-        // Hide the sign button, show completion badge
-        if (btn) btn.style.display = 'none';
-        const completeBadge = document.getElementById('l6CompleteBadge');
-        if (completeBadge) completeBadge.style.display = 'block';
-
-        showToast('✅ Decision digitally signed & finalized. Proceeding to CAM generation.');
-
-    } catch (e) {
-        console.error('Digital signature error:', e);
-        showToast('❌ Signature failed: ' + e.message);
-        if (btn) { btn.disabled = false; btn.textContent = 'Digitally Sign & Finalize'; }
-    }
-}
-
-function openCheckerQueueModal() {
-    loadCheckerQueue();
-    document.getElementById('modalCheckerQueue').style.display = 'flex';
-}
-
-// Helper: set element text and optional color
-function _setText(id, text, color) {
-    const el = document.getElementById(id);
-    if (el) {
-        el.textContent = text;
-        if (color) el.style.color = color;
-    }
-}
-
-function showL6ActionBar() {
-    // Hide the trigger container
-    const l6Trigger = document.getElementById('l6TriggerContainer');
-    if (l6Trigger) l6Trigger.style.display = 'none';
-
-    // Show the action bar
-    const l6Bar = document.getElementById('l6ActionBar');
-    if (l6Bar) {
-        l6Bar.style.display = 'block';
-        // Reset visibility
-        const notice = document.getElementById('l6CheckerNotice');
-        if (notice) notice.style.display = 'none';
-        const sigSection = document.getElementById('l6SignatureSection');
-        if (sigSection) sigSection.style.display = 'none';
-        const completeBadge = document.getElementById('l6CompleteBadge');
-        if (completeBadge) completeBadge.style.display = 'none';
-        const btnGroup = document.getElementById('l6ButtonGroup');
-        if (btnGroup) btnGroup.style.display = 'flex';
-
-        try {
-            const l5String = STATE.currentApp.layer5_output;
-            const l5Out = typeof l5String === 'string' ? JSON.parse(l5String) : l5String;
-            const ds = l5Out?.decision_summary || {};
-            const loan = l5Out?.loan_structure || l5Out?.loan || {};
-
-            // Populate AI Recap Card
-            const score = ds.final_credit_score || 0;
-            const bandColors = { 'Very Low Risk': '#10b981', 'Low Risk': '#6366f1', 'Moderate Risk': '#f59e0b', 'High Risk': '#ef4444', 'Very High Risk': '#ef4444' };
-            const bandColor = bandColors[ds.risk_band] || '#6b7280';
-
-            _setText('l6RecapScore', score, bandColor);
-            _setText('l6RecapGrade', ds.risk_band || '—', bandColor);
-
-            const decColors = { APPROVE: '#10b981', CONDITIONAL: '#f59e0b', REJECT: '#ef4444' };
-            _setText('l6RecapDecision', ds.decision || '—', decColors[ds.decision] || '#6b7280');
-            _setText('l6RecapPD', ds.probability_of_default ? `${(ds.probability_of_default * 100).toFixed(1)}%` : '—');
-
-            // Determine loan amount
-            let amt = 0;
-            if (loan.loan_structure && loan.loan_structure.total_sanctioned_lakhs) {
-                amt = loan.loan_structure.total_sanctioned_lakhs;
-            } else if (loan.approved_amount_lakhs) {
-                amt = loan.approved_amount_lakhs;
-            } else {
-                amt = ds.sanction_amount_lakhs || 0;
-            }
-            _setText('l6RecapLimit', amt ? `₹${amt}L` : '—');
-
-            console.log("L6 recap populated | Score:", score, "| Limit:", amt, "L");
-
-            if (amt > 200) {
-                if (notice) notice.style.display = 'block';
-            }
-        } catch (e) {
-            console.error("Error populating L6 recap", e);
-        }
-
-        // Re-render Lucide icons for newly visible elements
-        if (window.lucide) lucide.createIcons();
     }
 }
