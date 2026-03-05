@@ -154,6 +154,21 @@ function initSocket() {
         if (window.lucide) lucide.createIcons();
         showToast('⏸ Pipeline paused — review feature vector before ML scoring', 'warning');
     });
+
+    // ─── Layer 5 HITL Event ──────────────────────────────────────
+    STATE.socket.on('layer5_hitl_reject', (data) => {
+        console.log('L5 HITL Reject:', data);
+        STATE._l5AppId = data.app_id;
+        const rules = data.hard_rules || {};
+
+        document.getElementById('hitl5RejectRuleTitle').textContent = rules.gate === 'HARD_REJECT' ? 'Auto-Reject Triggered' : 'Hard Rule Violation';
+        document.getElementById('hitl5RejectReason').textContent = rules.rejection_reason || 'Unknown policy violation';
+        document.getElementById('hitl5RejectOverrideReason').value = '';
+
+        document.getElementById('modalL5HitlReject').style.display = 'flex';
+        if (window.lucide) lucide.createIcons();
+        showToast('⏸ Pipeline paused — Layer 5 Hard Reject requires officer action', 'error');
+    });
 }
 
 // ─── HITL Document Review Functions ─────────────────────────────
@@ -525,6 +540,11 @@ async function loadApplicationData(appId) {
         if (data.layer4_output) {
             populateResearchView(data.layer4_output);
             populateAnomalyView(data.layer4_output);
+        }
+
+        // Populate Risk Scoring (Layer 5) if available
+        if (data.layer5_output) {
+            populateRiskScoringView(data.layer5_output);
         }
     } catch (e) {
         console.error('Failed to load application data', e);
@@ -1813,4 +1833,511 @@ async function skipL4Hitl3() {
         body: JSON.stringify({ overrides: [] })
     });
     showToast('⏩ HITL-3 skipped — all computed features accepted');
+}
+
+// ─── Layer 5 HITL Hard Reject ──────────────────────────────────
+async function acceptL5Reject() {
+    const appId = STATE._l5AppId;
+    document.getElementById('modalL5HitlReject').style.display = 'none';
+    await fetch(`/api/applications/${appId}/layer5_hitl_reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accept' })
+    });
+    showToast('❌ Auto-Reject Accepted. Generating rejection letter...', 'error');
+}
+
+async function overrideL5Reject() {
+    const reason = document.getElementById('hitl5RejectOverrideReason').value.trim();
+    if (!reason) {
+        alert("An override justification is strictly required to bypass a Hard Reject.");
+        return;
+    }
+    const appId = STATE._l5AppId;
+    document.getElementById('modalL5HitlReject').style.display = 'none';
+    await fetch(`/api/applications/${appId}/layer5_hitl_reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'override', reason: reason })
+    });
+    showToast('⚠ Hard Reject Overridden. Pipeline resuming ML scoring...', 'warning');
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER 5: Risk Scoring View Population
+// ═══════════════════════════════════════════════════════════
+
+function populateRiskScoringView(l5) {
+    if (!l5) return;
+
+    const ds = l5.decision_summary || {};
+    const conf = l5.confidence || {};
+    const breakdown = l5.score_breakdown || {};
+    const expl = l5.explanation || {};
+    const loan = l5.loan_structure || {};
+    const hr = l5.hard_rules || {};
+    const snap = l5.audit_snapshot || {};
+    const pricing = l5.pricing || {};
+
+    // ─── Decision Card ─────────────────────────────────────────
+    const decCard = document.getElementById('l5DecisionCard');
+    if (decCard) {
+        decCard.style.display = '';
+
+        // Decision badge
+        const badge = document.getElementById('l5DecisionBadge');
+        if (badge) {
+            const decision = ds.decision || '—';
+            const colors = { APPROVE: '#10b981', CONDITIONAL: '#f59e0b', REJECT: '#ef4444' };
+            badge.textContent = decision;
+            badge.style.background = (colors[decision] || '#6b7280') + '22';
+            badge.style.color = colors[decision] || '#6b7280';
+            badge.style.border = `2px solid ${colors[decision] || '#6b7280'}`;
+        }
+
+        // KPI tiles
+        const score = ds.final_credit_score || 0;
+        const bandColors = { 'Very Low Risk': '#10b981', 'Low Risk': '#6366f1', 'Moderate Risk': '#f59e0b', 'High Risk': '#ef4444', 'Very High Risk': '#ef4444' };
+        const bandColor = bandColors[ds.risk_band] || '#6b7280';
+
+        _setText('l5FinalScore', score, bandColor);
+        _setText('l5RiskBand', ds.risk_band || '—', bandColor);
+        _setText('l5PD', ds.probability_of_default ? `${(ds.probability_of_default * 100).toFixed(1)}%` : '—');
+        _setText('l5Rate', ds.interest_rate ? `${ds.interest_rate}%` : '—');
+        _setText('l5Sanction', ds.sanction_amount_lakhs ? `₹${ds.sanction_amount_lakhs}L` : '—');
+        _setText('l5ModelVersion', snap.model_metadata?.model_version || 'model_xgb_credit_v4.3');
+
+        // ── Update donut with actual credit score ──
+        setTimeout(() => updateRiskDonut(score), 300);
+
+
+        // Confidence range bar
+        const lower = conf.score_lower || 0;
+        const upper = conf.score_upper || 900;
+        const pct = Math.min(100, Math.max(10, ((upper - lower) / 600) * 100));
+        _setText('l5ScoreLower', `↓ Optimistic: ${lower}`);
+        _setText('l5ScoreUpper', `Pessimistic: ${upper} ↑`);
+        _setText('l5UncertaintyLabel', `${conf.uncertainty_level || ''} Uncertainty | ±${(conf.pricing_buffer_bps || 0)}bps buffer`);
+        const bar = document.getElementById('l5ConfidenceBar');
+        if (bar) setTimeout(() => { bar.style.width = `${pct}%`; }, 200);
+
+        // Score breakdown
+        const sbody = document.getElementById('l5ScoreBreakdownBody');
+        if (sbody) {
+            const rows = [
+                ['XGBoost Raw Score', breakdown.xgboost_raw, ''],
+                ['LLM Qualitative Adjustment', breakdown.llm_adjustment, breakdown.llm_adjustment > 0 ? '#10b981' : breakdown.llm_adjustment < 0 ? '#ef4444' : ''],
+                ['Uncertainty Penalty', breakdown.uncertainty_penalty, '#ef4444'],
+                ['AMBER Alert Penalty', breakdown.amber_alert_penalty, '#f59e0b'],
+                ['HC Condition Penalty', breakdown.hc_condition_penalty, '#f59e0b'],
+                ['<strong>Final Adjusted Score</strong>', `<strong>${breakdown.final_score}</strong>`, bandColor],
+            ];
+            sbody.innerHTML = rows.map(([label, val, color]) =>
+                `<tr><td>${label}</td><td style="text-align:right;font-weight:600;color:${color};">
+                    ${typeof val === 'number' ? (val >= 0 ? '+' : '') + val : val ?? '—'}
+                </td></tr>`
+            ).join('');
+
+            // ── Render score composition chart ──
+            setTimeout(() => renderScoreCompositionChart(breakdown), 400);
+        }
+    }
+
+    const shapCard = document.getElementById('l5ShapCard');
+    if (shapCard && (expl.shap_waterfall || expl.shap_top_positive?.length)) {
+        shapCard.style.display = '';
+        _setText('l5ShapNarrative', expl.shap_waterfall || '');
+
+        const posEl = document.getElementById('l5ShapPositive');
+        const negEl = document.getElementById('l5ShapNegative');
+
+        if (posEl) {
+            posEl.innerHTML = (expl.shap_top_positive || []).map(d => `
+                <div style="padding:0.75rem;background:rgba(16,185,129,0.08);border-radius:8px;border-left:3px solid #10b981;margin-bottom:0.6rem;">
+                    <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.3rem;">${d.label}</div>
+                    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+                        <div style="background:rgba(16,185,129,0.15);border-radius:6px;padding:0.25rem 0.6rem;">
+                            <span style="font-size:0.7rem;color:#64748b;">Value: </span>
+                            <span style="font-size:0.9rem;font-weight:700;color:#10b981;">${typeof d.value === 'number' ? d.value.toFixed(2) : d.value}</span>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.1);border-radius:6px;padding:0.25rem 0.6rem;">
+                            <span style="font-size:0.7rem;color:#64748b;">SHAP: </span>
+                            <span style="font-size:0.85rem;font-weight:600;color:#10b981;">−${(d.shap_value || 0).toFixed(4)}</span>
+                            <span style="font-size:0.7rem;color:#64748b;"> (${d.magnitude})</span>
+                        </div>
+                    </div>
+                </div>`
+            ).join('');
+        }
+        if (negEl) {
+            negEl.innerHTML = (expl.shap_top_negative || []).map(d => `
+                <div style="padding:0.75rem;background:rgba(239,68,68,0.08);border-radius:8px;border-left:3px solid #ef4444;margin-bottom:0.6rem;">
+                    <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.3rem;">${d.label}</div>
+                    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+                        <div style="background:rgba(239,68,68,0.15);border-radius:6px;padding:0.25rem 0.6rem;">
+                            <span style="font-size:0.7rem;color:#64748b;">Value: </span>
+                            <span style="font-size:0.9rem;font-weight:700;color:#ef4444;">${typeof d.value === 'number' ? d.value.toFixed(2) : d.value}</span>
+                        </div>
+                        <div style="background:rgba(239,68,68,0.1);border-radius:6px;padding:0.25rem 0.6rem;">
+                            <span style="font-size:0.7rem;color:#64748b;">SHAP: </span>
+                            <span style="font-size:0.85rem;font-weight:600;color:#ef4444;">+${(d.shap_value || 0).toFixed(4)}</span>
+                            <span style="font-size:0.7rem;color:#64748b;"> (${d.magnitude})</span>
+                        </div>
+                    </div>
+                </div>`
+            ).join('');
+        }
+
+        // ── Render SHAP waterfall chart ──
+        setTimeout(() => renderShapWaterfallChart(expl.shap_top_positive || [], expl.shap_top_negative || []), 400);
+    }
+
+    // ─── Five Cs Card ───────────────────────────────────────────
+    const fiveCsCard = document.getElementById('l5FiveCsCard');
+    const fiveCs = expl.five_cs || {};
+    if (fiveCsCard && Object.keys(fiveCs).length) {
+        fiveCsCard.style.display = '';
+        const grid = document.getElementById('l5FiveCsGrid');
+        if (grid) {
+            const cColors = { POSITIVE: '#10b981', MODERATE: '#f59e0b', 'MODERATE — POSITIVE': '#6366f1', NEGATIVE: '#ef4444' };
+            const cLabels = { character: '👤 Character', capacity: '💪 Capacity', capital: '🏦 Capital', collateral: '🏠 Collateral', conditions: '🌐 Conditions' };
+            grid.innerHTML = Object.entries(cLabels).map(([key, label]) => {
+                const c = fiveCs[key] || {};
+                const rating = c.rating || 'MODERATE';
+                const color = cColors[rating] || '#6b7280';
+                return `<div style="padding:0.75rem;background:var(--surface-card);border-radius:10px;border-top:3px solid ${color};text-align:center;">
+                    <div style="font-size:0.75rem;color:var(--text-secondary);">${label}</div>
+                    <div style="font-size:0.9rem;font-weight:700;color:${color};margin-top:0.25rem;">${rating}</div>
+                </div>`;
+            }).join('');
+        }
+        // Always show Five Cs explanations as expandable cards
+        const explContainer = document.getElementById('l5FiveCsExplanations');
+        if (explContainer) {
+            const cColors = { POSITIVE: '#10b981', MODERATE: '#f59e0b', 'MODERATE — POSITIVE': '#6366f1', NEGATIVE: '#ef4444' };
+            const cLabels = { character: '👤 Character', capacity: '💪 Capacity', capital: '🏦 Capital', collateral: '🏠 Collateral', conditions: '🌐 Conditions' };
+            explContainer.innerHTML = Object.entries(cLabels).map(([key, label]) => {
+                const c = fiveCs[key] || {};
+                const rating = c.rating || 'MODERATE';
+                const color = cColors[rating] || '#6b7280';
+                const explanation = c.explanation || '';
+                if (!explanation) return '';
+                return `<div style="padding:0.75rem;background:var(--surface-card);border-radius:8px;border-left:3px solid ${color};">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                        <span style="font-size:0.8rem;font-weight:600;">${label}</span>
+                        <span style="font-size:0.7rem;background:${color}22;color:${color};padding:0.15rem 0.5rem;border-radius:6px;">${rating}</span>
+                    </div>
+                    <div style="font-size:0.82rem;color:var(--text-secondary);line-height:1.6;">${explanation}</div>
+                </div>`;
+            }).join('');
+        }
+
+        _setText('l5LlmOpinion', expl.llm_opinion || '');
+        _setText('l5BiggestRisk', expl.biggest_risk || '—');
+        _setText('l5BiggestStrength', expl.biggest_strength || '—');
+    }
+
+    // ─── Loan + MPBF Card ──────────────────────────────────────
+    const loanCard = document.getElementById('l5LoanCard');
+    const loanStruct = loan.loan_structure || {};
+    if (loanCard && (loanStruct.term_loan || loan.limits)) {
+        loanCard.style.display = '';
+
+        // Loan components table
+        const loanBody = document.getElementById('l5LoanBody');
+        if (loanBody) {
+            const rows = [];
+            if (loanStruct.term_loan) {
+                const tl = loanStruct.term_loan;
+                rows.push(`<tr><td>${tl.product || 'Term Loan'}</td><td>₹${tl.amount_lakhs}L</td><td>${tl.rate}%</td><td>${tl.tenure_months}m</td></tr>`);
+            }
+            if (loanStruct.working_capital) {
+                const wc = loanStruct.working_capital;
+                rows.push(`<tr><td>${wc.product || 'Working Capital OD'}</td><td>₹${wc.amount_lakhs}L</td><td>${wc.rate}%</td><td>${wc.tenure_months}m</td></tr>`);
+            }
+            rows.push(`<tr style="font-weight:700;"><td>Total Sanctioned</td><td>₹${loanStruct.total_sanctioned_lakhs || loan.approved_amount_lakhs}L</td><td>—</td><td>—</td></tr>`);
+            loanBody.innerHTML = rows.join('');
+        }
+
+        // Limits table
+        const limitsBody = document.getElementById('l5LimitsBody');
+        if (limitsBody && loan.limits) {
+            const binding = (loan.binding_constraint || '').toUpperCase();
+            const methodLabels = {
+                dscr_limit: 'DSCR-Based (Repayment Capacity)',
+                gst_limit: 'GST Revenue Multiplier',
+                collateral_limit: 'Collateral LTV (65%)',
+                mpbf_limit: 'MPBF — Nayak Committee Method II',
+            };
+            limitsBody.innerHTML = Object.entries(loan.limits).map(([k, v]) => {
+                const isBinding = k.replace('_limit', '').toUpperCase() === binding;
+                return `<tr style="${isBinding ? 'background:rgba(99,102,241,0.1);' : ''}">
+                    <td>${methodLabels[k] || k}</td>
+                    <td style="font-weight:${isBinding ? '700' : '400'};">₹${typeof v === 'number' ? v.toFixed(1) : v}L</td>
+                    <td>${isBinding ? '<span style="color:#6366f1;font-size:0.75rem;font-weight:600;">← BINDING</span>' : ''}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // MPBF breakdown
+        const mpbfEl = document.getElementById('l5MpbfBreakdown');
+        const mpbf = loan.mpbf || {};
+        if (mpbfEl && mpbf.working_capital_gap !== undefined) {
+            const ca = mpbf.current_assets || {};
+            const cl = mpbf.current_liabilities_excl_bank || {};
+            mpbfEl.innerHTML = `
+                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                    <tr><td colspan="2" style="color:var(--text-secondary);font-size:0.75rem;padding-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Current Assets</td></tr>
+                    ${_mpbfRow('  Inventory', ca.inventory)}
+                    ${_mpbfRow('  Trade Debtors', ca.debtors)}
+                    ${_mpbfRow('  Advances', ca.advances)}
+                    ${_mpbfRow('  Cash & Bank', ca.cash)}
+                    <tr style="font-weight:600;border-top:1px solid #374151;">${_mpbfRowRaw('<strong>Total Current Assets (A)</strong>', ca.total)}</tr>
+                    <tr><td colspan="2" style="padding:0.5rem 0 0.25rem;"></td></tr>
+                    <tr><td colspan="2" style="color:var(--text-secondary);font-size:0.75rem;padding-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Current Liabilities (excl. bank borrowings)</td></tr>
+                    ${_mpbfRow('  Creditors', cl.creditors)}
+                    ${_mpbfRow('  Provisions', cl.provisions)}
+                    ${_mpbfRow('  Other CL', cl.other_cl)}
+                    <tr style="font-size:0.7rem;color:var(--text-secondary);">${_mpbfRowRaw('  Bank Borrowings (excluded per RBI)', `[₹${cl.bank_borrowings_excluded || 0}L excluded]`)}</tr>
+                    <tr style="font-weight:600;border-top:1px solid #374151;">${_mpbfRowRaw('<strong>Total CL excl. Bank (B)</strong>', cl.total)}</tr>
+                    <tr style="height:0.5rem;"><td colspan="2"></td></tr>
+                    <tr style="border-top:2px solid #6366f1;">${_mpbfRowRaw('<strong>Working Capital Gap (A−B)</strong>', `<strong>₹${mpbf.working_capital_gap?.toFixed(1) || 0}L</strong>`)}</tr>
+                    <tr style="color:#10b981;font-weight:700;">${_mpbfRowRaw('MPBF = 75% of WC Gap', `₹${(mpbf.mpbf_75pct || 0).toFixed(1)}L`)}</tr>
+                    <tr style="color:#f59e0b;">${_mpbfRowRaw("Borrower's Own Margin = 25%", `₹${(mpbf.borrower_margin_25pct || 0).toFixed(1)}L`)}</tr>
+                </table>
+                <div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-secondary);">📖 ${mpbf.rbi_method || 'Nayak Committee Method II'}</div>`;
+        }
+
+        // Covenants
+        const covenantsEl = document.getElementById('l5Covenants');
+        if (covenantsEl) {
+            const covenants = ds.covenants || [];
+            covenantsEl.innerHTML = covenants.map(c => `
+                <div style="padding:0.6rem 0.75rem;background:rgba(99,102,241,0.07);border-radius:8px;border-left:3px solid #6366f1;margin-bottom:0.4rem;font-size:0.83rem;">
+                    <span style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">${c.id}</span>
+                    <span style="color:#6366f1;font-size:0.75rem;margin-right:0.5rem;">[${c.type}]</span>
+                    ${c.description}
+                </div>`
+            ).join('') || '<div style="color:var(--text-secondary);font-size:0.85rem;">No covenants attached.</div>';
+        }
+    }
+
+    // ─── Hard Rules Log ─────────────────────────────────────────
+    const rulesCard = document.getElementById('l5RulesCard');
+    const ruleLog = hr.rule_log || [];
+    if (rulesCard && ruleLog.length) {
+        rulesCard.style.display = '';
+        const rulesBody = document.getElementById('l5RulesBody');
+        if (rulesBody) {
+            rulesBody.innerHTML = ruleLog.map(r => {
+                const rColor = { REJECT: '#ef4444', CONDITIONAL: '#f59e0b', PASS: '#10b981' }[r.result] || '#6b7280';
+                return `<tr>
+                    <td><code style="font-size:0.8rem;">${r.rule_id}</code></td>
+                    <td style="font-size:0.8rem;">${r.condition}</td>
+                    <td><span style="color:${rColor};font-weight:600;font-size:0.8rem;">${r.result}</span></td>
+                    <td style="font-size:0.8rem;color:var(--text-secondary);">${r.reason}</td>
+                </tr>`;
+            }).join('');
+        }
+    }
+
+    // ─── Audit Snapshot ─────────────────────────────────────────
+    const auditCard = document.getElementById('l5AuditCard');
+    const auditBody = document.getElementById('l5AuditBody');
+    if (auditCard && auditBody) {
+        auditCard.style.display = '';
+        const snapMeta = snap.model_metadata || {};
+        const fvSnap = snap.feature_vector_snapshot || {};
+        const dr = snap.decision_record || {};
+        const audit = snap.auditability || {};
+        const items = [
+            ['Case ID', snap.case_metadata?.case_id || '—'],
+            ['Snapshot Timestamp', snap.case_metadata?.snapshot_timestamp ? new Date(snap.case_metadata.snapshot_timestamp).toLocaleString('en-IN') : '—'],
+            ['Model Version', snapMeta.model_version || '—'],
+            ['Model Hash (SHA-256)', (snapMeta.model_hash || '').substring(0, 16) + '…'],
+            ['Model Type', snapMeta.is_mock_model ? '⚠ Surrogate Mock (real model pending)' : '✅ Trained XGBoost'],
+            ['Feature Vector Hash', (fvSnap.feature_vector_hash_sha256 || '').substring(0, 16) + '…'],
+            ['Features Included', fvSnap.feature_count || 25],
+            ['Imputations', fvSnap.imputation_flags?.length || 0],
+            ['LLM Opinion Hash', (dr.llm_opinion_hash_sha256 || '').substring(0, 16) + '…'],
+            ['Decision', dr.decision || '—'],
+            ['Automated vs Human', audit.automated_vs_human || 'AUTOMATED'],
+            ['Data Retention', `${audit.data_retention_years || 8} years (RBI mandate)`],
+        ];
+        auditBody.innerHTML = items.map(([k, v]) =>
+            `<div style="padding:0.4rem 0.6rem;background:var(--surface-card);border-radius:6px;">
+                <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">${k}</div>
+                <div style="font-size:0.82rem;font-weight:500;word-break:break-all;">${v}</div>
+            </div>`
+        ).join('');
+    }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+function _setText(id, text, color) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.innerHTML = text ?? '—';
+        if (color) el.style.color = color;
+    }
+}
+function _mpbfRow(label, val) {
+    const display = (val !== undefined && val !== null) ? `₹${parseFloat(val).toFixed(1)}L` : '₹0L';
+    return `<tr><td style="padding:0.15rem 0;color:var(--text-secondary);">${label}</td><td style="text-align:right;">${display}</td></tr>`;
+}
+function _mpbfRowRaw(label, val) {
+    return `<td style="padding:0.2rem 0;">${label}</td><td style="text-align:right;">${val}</td>`;
+}
+
+
+// ─── Chart.js — SHAP Waterfall Horizontal Bar Chart ──────────────────────────
+let _shapChartInstance = null;
+function renderShapWaterfallChart(topPositive, topNegative) {
+    const canvas = document.getElementById('shapWaterfallChart');
+    if (!canvas) return;
+    const all = [
+        ...topPositive.map(d => ({ label: d.label, value: -(d.shap_value || 0), actualVal: d.value, dir: 'positive' })),
+        ...topNegative.map(d => ({ label: d.label, value: +(d.shap_value || 0), actualVal: d.value, dir: 'negative' })),
+    ].sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 8);
+
+    const labels = all.map(d => {
+        const actStr = typeof d.actualVal === 'number' ? d.actualVal.toFixed(2) : d.actualVal;
+        const lbl = d.label.length > 20 ? d.label.substring(0, 20) + '…' : d.label;
+        return `${lbl} [${actStr}]`;
+    });
+    const values = all.map(d => +(d.value * 100).toFixed(3));
+    const colors = all.map(d => d.dir === 'positive' ? 'rgba(16,185,129,0.7)' : 'rgba(239,68,68,0.7)');
+    const borders = all.map(d => d.dir === 'positive' ? '#10b981' : '#ef4444');
+
+    if (_shapChartInstance) { _shapChartInstance.destroy(); }
+    _shapChartInstance = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{ label: 'SHAP PD Impact (%pts)', data: values, backgroundColor: colors, borderColor: borders, borderWidth: 1, borderRadius: 4 }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ctx.raw < 0
+                            ? `Reduces default prob by ${Math.abs(ctx.raw).toFixed(3)}%pts (positive)`
+                            : `Increases default prob by ${Math.abs(ctx.raw).toFixed(3)}%pts (risk factor)`
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } }, title: { display: true, text: 'PD Change (%pts) — negative = score booster', color: '#94a3b8', font: { size: 10 } } },
+                y: { grid: { display: false }, ticks: { color: '#e2e8f0', font: { size: 10 } } }
+            }
+        }
+    });
+    document.getElementById('l5ShapChartCard').style.display = '';
+}
+
+
+// ─── Chart.js — Score Composition Doughnut ───────────────────────────────────
+let _scoreChartInstance = null;
+function renderScoreCompositionChart(breakdown) {
+    const canvas = document.getElementById('scoreCompositionChart');
+    if (!canvas) return;
+    const xgbRaw = Math.abs(breakdown.xgboost_raw || 0);
+    const llmAdj = Math.abs(breakdown.llm_adjustment || 0);
+    const uncPen = Math.abs(breakdown.uncertainty_penalty || 0);
+    const amberPen = Math.abs(breakdown.amber_alert_penalty || 0);
+    const hcPen = Math.abs(breakdown.hc_condition_penalty || 0);
+    if (_scoreChartInstance) { _scoreChartInstance.destroy(); }
+    _scoreChartInstance = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: ['XGBoost Base', 'LLM Adjustment', 'Uncertainty Penalty', 'Alert Penalty', 'HC Penalty'],
+            datasets: [{ data: [xgbRaw, llmAdj, uncPen, amberPen, hcPen], backgroundColor: ['#6366f1', '#10b981', '#ef4444', '#f59e0b', '#f97316'], borderColor: '#0f172a', borderWidth: 2, hoverOffset: 8 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '60%',
+            plugins: {
+                legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 8 } },
+                tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw > 0 ? '+' : ''}${ctx.raw} pts` } }
+            }
+        }
+    });
+    document.getElementById('l5ScoreChartCard').style.display = '';
+}
+
+
+// ─── Update Donut with Actual Credit Score ────────────────────────────────────
+function updateRiskDonut(creditScore, scoreMin = 300, scoreMax = 900) {
+    const circle = document.getElementById('donutCircle');
+    const scoreNum = document.getElementById('riskScoreNum');
+    const riskGrade = document.getElementById('riskGrade');
+    if (!circle) return;
+
+    const pct = Math.min(1, Math.max(0, (creditScore - scoreMin) / (scoreMax - scoreMin)));
+    const circumference = 2 * Math.PI * 50; // r=50
+    const dash = pct * circumference;
+    circle.style.strokeDasharray = `${dash.toFixed(1)} ${circumference.toFixed(1)}`;
+    circle.style.transition = 'stroke-dasharray 1.2s cubic-bezier(0.4,0,0.2,1)';
+
+    // Color by score
+    let color = '#ef4444';
+    let grade = 'HIGH RISK';
+    if (creditScore >= 750) { color = '#10b981'; grade = 'EXCELLENT'; }
+    else if (creditScore >= 700) { color = '#6366f1'; grade = 'LOW RISK'; }
+    else if (creditScore >= 650) { color = '#f59e0b'; grade = 'MODERATE'; }
+    else if (creditScore >= 600) { color = '#f97316'; grade = 'ELEVATED'; }
+    circle.style.stroke = color;
+    if (scoreNum) { scoreNum.textContent = creditScore; scoreNum.style.color = color; }
+    if (riskGrade) { riskGrade.textContent = grade; riskGrade.style.color = color; }
+}
+
+
+// ─── Generate LLM SHAP Explanation ───────────────────────────────────────────
+async function generateShapExplanation() {
+    const appId = STATE.currentApp?.id;
+    if (!appId) { showToast('❌ No active application'); return; }
+
+    const btn = document.getElementById('btnGenerateShapExplain');
+    const loading = document.getElementById('shapExplainLoading');
+    const content = document.getElementById('shapExplainContent');
+    const errorEl = document.getElementById('shapExplainError');
+    const text = document.getElementById('shapExplainText');
+    const cacheBadge = document.getElementById('shapExplainCacheBadge');
+
+    if (btn) btn.disabled = true;
+    if (loading) loading.style.display = 'block';
+    if (content) content.style.display = 'none';
+    if (errorEl) errorEl.style.display = 'none';
+
+    try {
+        const res = await fetch(`/api/applications/${appId}/shap_explain`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.error) {
+            if (errorEl) { errorEl.textContent = '❌ ' + data.error; errorEl.style.display = 'block'; }
+            showToast('❌ ' + data.error);
+            return;
+        }
+        if (text) text.textContent = data.explanation || '';
+        if (cacheBadge) {
+            cacheBadge.textContent = data.cached ? '♻ Cached' : '✨ Fresh from Groq';
+            cacheBadge.style.background = data.cached ? 'rgba(245,158,11,0.15)' : 'rgba(99,102,241,0.15)';
+            cacheBadge.style.color = data.cached ? '#f59e0b' : '#818cf8';
+        }
+        if (content) content.style.display = 'block';
+        if (window.lucide) lucide.createIcons();
+    } catch (e) {
+        if (errorEl) { errorEl.textContent = 'Network error: ' + e.message; errorEl.style.display = 'block'; }
+        showToast('❌ Failed to generate explanation');
+    } finally {
+        if (loading) loading.style.display = 'none';
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Regenerate`;
+            if (window.lucide) lucide.createIcons();
+        }
+    }
 }

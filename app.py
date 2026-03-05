@@ -24,6 +24,8 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 import threading
 _layer4_events: dict = {}   # app_id → {"e1": Event, "e2": Event, "e3": Event, "d1": {}, "d2": {}, "d3": {}}
+_layer5_events: dict = {}   # app_id → {"e1": Event, "d1": {}}
+
 
 ALLOWED_EXTENSIONS = {'pdf', 'csv', 'xlsx', 'xls'}
 
@@ -740,6 +742,13 @@ def get_application(app_id):
         except:
             pass
 
+    # Parse layer5_output if present
+    if app_data.get('layer5_output'):
+        try:
+            app_data['layer5_output'] = json.loads(app_data['layer5_output'])
+        except:
+            pass
+
     # Get documents
     cur.execute("SELECT * FROM documents WHERE application_id=%s ORDER BY uploaded_at", (app_id,))
     docs = cur.fetchall()
@@ -1115,6 +1124,35 @@ def layer4_hitl_3(app_id):
     return jsonify({"status": "ok", "overrides": len(feature_overrides)})
 
 
+# ─── Layer 5 HITL Endpoints ──────────────────────────────────────────────────
+
+@app.route('/api/applications/<int:app_id>/layer5_hitl_reject', methods=['POST'])
+@login_required
+def layer5_hitl_reject(app_id):
+    """HITL: Officer overrides or accepts a Layer 5 Hard Reject."""
+    body = request.json or {}
+    action = body.get('action')  # "override" or "accept"
+    reason = body.get('reason', '')
+    officer_id = str(session.get('user_id', 'unknown'))
+
+    slot = _layer5_events.get(app_id)
+    if not slot:
+        return jsonify({"error": "No active Layer 5 pipeline for this application"}), 404
+
+    slot['d1'] = {
+        'action': action,
+        'reason': reason,
+        'officer_id': officer_id,
+        'submitted_at': datetime.utcnow().isoformat(),
+    }
+    slot['e1'].set()
+
+    log_audit(session['user_id'], 'L5_HITL_REJECT_OVERRIDE', None,
+              {'action': action, 'app_id': app_id, 'reason': reason})
+    return jsonify({"status": "ok", "action": action})
+
+
+
 def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, officer_notes=''):
     """Background task: run Layer 2 through Layer 6."""
     import time
@@ -1410,17 +1448,88 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
     finally:
         _layer4_events.pop(app_id, None)
 
-    # ─── Layers 5-6: Placeholder progress (future implementation) ────────
-    layer_names = {
-        5: "Risk Scoring",
-        6: "CAM Generation"
-    }
-    for layer_num, layer_name in layer_names.items():
-        socketio.emit('layer_progress', {"layer": layer_num, "name": layer_name, "status": "processing", "pct": 50},
-                      room=f'app_{app_id}')
-        time.sleep(1.5)
-        socketio.emit('layer_complete', {"layer": layer_num, "name": layer_name, "status": "done"},
-                      room=f'app_{app_id}')
+    # ─── Layer 5: Risk Scoring & Decision Engine ──────────────────────────
+    socketio.emit('layer_progress', {"layer": 5, "name": "Risk Scoring", "status": "processing", "pct": 3},
+                  room=f'app_{app_id}')
+
+    try:
+        from layer5.layer5_chain import run_layer5
+
+        def l5_progress(msg, pct):
+            socketio.emit('layer_progress', {"layer": 5, "name": "Risk Scoring",
+                          "status": "processing", "pct": pct, "detail": msg},
+                          room=f'app_{app_id}')
+
+        def l5_hitl_reject(hard_rules_result):
+            # Register event
+            e = threading.Event()
+            _layer5_events[app_id] = {"e1": e, "d1": {}}
+            
+            # Emit to frontend
+            socketio.emit('layer5_hitl_reject', {
+                "app_id": app_id,
+                "hard_rules": hard_rules_result
+            }, room=f'app_{app_id}')
+            
+            # Wait for decision
+            e.wait()
+            
+            # Get decision
+            data = _layer5_events[app_id].get("d1", {})
+            return data
+
+        layer5_result = run_layer5(
+            layer4_output=layer4_result if 'layer4_result' in dir() else {},
+            layer2_data=l2_data if 'l2_data' in dir() else {},
+            company_name=company_name,
+            case_id=case_id,
+            requested_amount_lakhs=75.0,
+            progress_callback=l5_progress,
+            hitl_callback=l5_hitl_reject,
+        )
+
+        layer5_json = json.dumps(layer5_result, indent=2, default=str)
+
+        # Save to DB
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute("ALTER TABLE applications ADD COLUMN layer5_output LONGTEXT")
+            conn.commit()
+        except:
+            conn.rollback()
+        cur.execute("UPDATE applications SET layer5_output=%s, current_layer=5 WHERE id=%s",
+                    (layer5_json, app_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        decision = layer5_result.get("decision_summary", {})
+        socketio.emit('layer_complete', {
+            "layer": 5,
+            "name": "Risk Scoring",
+            "status": "done",
+            "decision": decision.get("decision", ""),
+            "credit_score": decision.get("final_credit_score", 0),
+            "risk_band": decision.get("risk_band", ""),
+            "interest_rate": decision.get("interest_rate", 0),
+        }, room=f'app_{app_id}')
+        print(f"Layer 5 complete: {decision.get('decision')} | Score={decision.get('final_credit_score')}")
+
+    except Exception as e:
+        print(f"Layer 5 pipeline error: {e}")
+        import traceback; traceback.print_exc()
+        socketio.emit('layer_complete', {
+            "layer": 5, "name": "Risk Scoring",
+            "status": "error", "error": str(e)
+        }, room=f'app_{app_id}')
+
+    # ─── Layer 6: CAM Generation (placeholder) ───────────────────────────
+    socketio.emit('layer_progress', {"layer": 6, "name": "CAM Generation", "status": "processing", "pct": 50},
+                  room=f'app_{app_id}')
+    time.sleep(1.5)
+    socketio.emit('layer_complete', {"layer": 6, "name": "CAM Generation", "status": "done"},
+                  room=f'app_{app_id}')
 
     # Mark application as completed
     conn = get_db()
@@ -1473,6 +1582,78 @@ def session_info():
         "permissions": session.get('permissions', []),
         "is_super_admin": session.get('is_super_admin', False)
     })
+
+
+# ─── SHAP LLM Explanation API ─────────────────────────────────────────────────
+@app.route('/api/applications/<int:app_id>/shap_explain', methods=['POST'])
+@login_required
+def shap_explain(app_id):
+    """
+    Generate (or return cached) LLM explanation for the SHAP decomposition.
+    Calls generate_shap_explanation() from layer5.step6_llm_overlay.
+    """
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT layer5_output, company_name FROM applications WHERE id=%s", (app_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row or not row.get('layer5_output'):
+        return jsonify({"error": "No Layer 5 output found. Run the pipeline first."}), 404
+
+    try:
+        l5 = json.loads(row['layer5_output']) if isinstance(row['layer5_output'], str) else row['layer5_output']
+    except Exception:
+        return jsonify({"error": "Failed to parse Layer 5 output."}), 500
+
+    # Return cached explanation if it exists
+    cached = l5.get("shap_explanation")
+    if cached:
+        return jsonify({"explanation": cached, "cached": True})
+
+    # Generate fresh explanation
+    try:
+        from layer5.step6_llm_overlay import generate_shap_explanation
+        shap_result = l5.get("explanation", {})
+        xgb_result = l5.get("xgboost", {})
+        decision_summary = l5.get("decision_summary", {})
+
+        # Build shap_result in the format expected by generate_shap_explanation
+        shap_input = {
+            "top_positive_drivers": shap_result.get("shap_top_positive", []),
+            "top_negative_drivers": shap_result.get("shap_top_negative", []),
+            "waterfall_narrative": shap_result.get("shap_waterfall", ""),
+            "base_value": 0.30,
+        }
+
+        explanation = generate_shap_explanation(
+            features={},
+            shap_result=shap_input,
+            xgb_result=xgb_result,
+            decision_summary=decision_summary,
+            company_name=row.get('company_name', ''),
+        )
+
+        # Cache the explanation back into the DB
+        try:
+            l5["shap_explanation"] = explanation
+            conn2 = get_db()
+            cur2 = conn2.cursor()
+            cur2.execute("UPDATE applications SET layer5_output=%s WHERE id=%s",
+                         (json.dumps(l5), app_id))
+            conn2.commit()
+            cur2.close()
+            conn2.close()
+        except Exception as cache_err:
+            print(f"Failed to cache SHAP explanation: {cache_err}")
+
+        return jsonify({"explanation": explanation, "cached": False})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to generate explanation: {str(e)}"}), 500
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────

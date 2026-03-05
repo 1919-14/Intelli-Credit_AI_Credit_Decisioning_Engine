@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -434,35 +435,514 @@
 
         <!-- ═══════════════ SECTION: RISK SCORING ═══════════════ -->
         <section class="content-section" id="section-scoring">
-            <div class="scoring-grid">
-                <div class="card">
-                    <h3 class="card-title">Overall Risk Score</h3>
-                    <div class="risk-donut" id="riskDonut">
-                        <svg viewBox="0 0 120 120" class="donut-svg">
-                            <circle cx="60" cy="60" r="50" stroke="#1e293b" stroke-width="12" fill="none" />
-                            <circle cx="60" cy="60" r="50" stroke="#ef4444" stroke-width="12" fill="none"
-                                stroke-dasharray="0 314" id="donutCircle" stroke-linecap="round"
-                                transform="rotate(-90 60 60)" />
-                        </svg>
-                        <div class="donut-label">
-                            <span class="donut-score" id="riskScoreNum">—</span>
-                            <span class="donut-max">/ 100</span>
+
+            <!-- ── Row 1: Donut + Pipeline + Decision Card ── -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
+
+                <!-- Overall Risk Score + Decision -->
+                <div class="card" id="l5DecisionCard" style="display:none;">
+                    <div class="card-header">
+                        <span class="card-icon" style="background:rgba(99,102,241,0.2);">🏦</span>
+                        <div>
+                            <h3>Credit Decision — Layer 5 Output</h3>
+
+                        </div>
+                        <br><br>
+                        <span id="l5DecisionBadge"
+                            style="margin-left:auto;padding:0.4rem 1.2rem;border-radius:999px;font-weight:700;font-size:1rem;">—</span>
+                    </div>
+
+                    <!-- Overall Risk Gauge with actual score -->
+                    <div style="display:flex;align-items:center;gap:2rem;padding:1rem 0;">
+                        <div class="risk-donut" id="riskDonut"
+                            style="position:relative;width:140px;height:140px;flex-shrink:0;">
+                            <svg viewBox="0 0 120 120" class="donut-svg" style="width:140px;height:140px;">
+                                <circle cx="60" cy="60" r="50" stroke="#1e293b" stroke-width="12" fill="none" />
+                                <circle cx="60" cy="60" r="50" stroke="#ef4444" stroke-width="12" fill="none"
+                                    stroke-dasharray="0 314" id="donutCircle" stroke-linecap="round"
+                                    transform="rotate(-90 60 60)" />
+                            </svg>
+                            <div class="donut-label"
+                                style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+                                <div id="riskScoreNum" style="font-size:1.8rem;font-weight:800;line-height:1;">—</div>
+                                <div style="font-size:0.7rem;color:var(--text-secondary);">Credit Score</div>
+                                <div id="riskGrade" style="font-size:0.65rem;margin-top:2px;">—</div>
+                            </div>
+                        </div>
+                        <!-- KPI tiles -->
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;flex:1;">
+                            <div
+                                style="text-align:center;padding:0.75rem 0.5rem;background:var(--surface-card);border-radius:10px;">
+                                <div style="font-size:1.6rem;font-weight:800;" id="l5FinalScore">—</div>
+                                <div style="font-size:0.7rem;color:var(--text-secondary);">Credit Score</div>
+                                <div style="font-size:0.65rem;margin-top:2px;" id="l5RiskBand">—</div>
+                            </div>
+                            <div
+                                style="text-align:center;padding:0.75rem 0.5rem;background:var(--surface-card);border-radius:10px;">
+                                <div style="font-size:1.6rem;font-weight:800;" id="l5PD">—</div>
+                                <div style="font-size:0.7rem;color:var(--text-secondary);">Prob. of Default</div>
+                            </div>
+                            <div
+                                style="text-align:center;padding:0.75rem 0.5rem;background:var(--surface-card);border-radius:10px;">
+                                <div style="font-size:1.6rem;font-weight:800;" id="l5Rate">—</div>
+                                <div style="font-size:0.7rem;color:var(--text-secondary);">Interest Rate p.a.</div>
+                            </div>
+                            <div
+                                style="text-align:center;padding:0.75rem 0.5rem;background:var(--surface-card);border-radius:10px;">
+                                <div style="font-size:1.6rem;font-weight:800;" id="l5Sanction">—</div>
+                                <div style="font-size:0.7rem;color:var(--text-secondary);">Sanctioned Amount</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="risk-grade" id="riskGrade">—</div>
+
+                    <!-- Confidence Range Bar -->
+                    <div style="margin:0 0 0.75rem;">
+                        <div
+                            style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.3rem;">
+                            <span id="l5ScoreLower">—</span>
+                            <span id="l5UncertaintyLabel">—</span>
+                            <span id="l5ScoreUpper">—</span>
+                        </div>
+                        <div style="height:6px;background:#1e293b;border-radius:3px;overflow:hidden;">
+                            <div id="l5ConfidenceBar"
+                                style="height:100%;background:linear-gradient(90deg,#10b981,#6366f1);border-radius:3px;width:0%;transition:width 1s;">
+                            </div>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-secondary);text-align:center;margin-top:0.2rem;">
+                            Score confidence range (10th–90th pct)</div>
+                    </div>
+
+                    <!-- Score Breakdown Table -->
+                    <h4
+                        style="margin:0.75rem 0 0.4rem;font-size:0.8rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
+                        Score Breakdown</h4>
+                    <table class="data-table" id="l5ScoreBreakdownTable">
+                        <thead>
+                            <tr>
+                                <th>Component</th>
+                                <th style="text-align:right;">Points</th>
+                            </tr>
+                        </thead>
+                        <tbody id="l5ScoreBreakdownBody"></tbody>
+                    </table>
                 </div>
-                <div class="card">
-                    <h3 class="card-title">AI Processing Pipeline</h3>
-                    <div class="pipeline-status-list" id="pipelineStatusList">
-                        <!-- Populated dynamically -->
+
+                <!-- AI Pipeline + Decision Summary (pre-decision) -->
+                <div style="display:flex;flex-direction:column;gap:1.25rem;">
+                    <div class="card">
+                        <h3 class="card-title">AI Processing Pipeline</h3>
+                        <div class="pipeline-status-list" id="pipelineStatusList">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                    <div class="card" id="decisionSummaryCard">
+                        <h3 class="card-title">Decision Summary</h3>
+                        <div id="decisionSummary" class="empty-state">Pending pipeline completion</div>
                     </div>
                 </div>
-                <div class="card">
-                    <h3 class="card-title">Decision Summary</h3>
-                    <div id="decisionSummary" class="empty-state">Pending pipeline completion</div>
+            </div>
+
+            <!-- ── Row 2: Score Breakdown Bar Chart + SHAP Waterfall Chart ── -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;" id="chartsRow"
+                style="display:none;">
+                <!-- Score Composition Chart -->
+                <div class="card" id="l5ScoreChartCard" style="display:none;">
+                    <div class="card-header">
+                        <span class="card-icon" style="background:rgba(99,102,241,0.2);">📊</span>
+                        <div>
+                            <h3>Score Composition</h3>
+                            <p style="color:var(--text-secondary);font-size:0.8rem;">How the final score was built</p>
+                        </div>
+                    </div>
+                    <div style="position:relative;height:200px;">
+                        <canvas id="scoreCompositionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- SHAP Waterfall Bar Chart -->
+                <div class="card" id="l5ShapChartCard" style="display:none;">
+                    <div class="card-header">
+                        <span class="card-icon" style="background:rgba(16,185,129,0.2);">📉</span>
+                        <div>
+                            <h3>SHAP Feature Impact</h3>
+                            <p style="color:var(--text-secondary);font-size:0.8rem;">How each factor shifted the default
+                                probability</p>
+                        </div>
+                    </div>
+                    <div style="position:relative;height:200px;">
+                        <canvas id="shapWaterfallChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Row 3: SHAP Explainability Detail ── -->
+            <!-- SHAP Explainability (moved into scoring section) -->
+            <div class="card" id="l5ShapCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(16,185,129,0.2);">📊</span>
+                    <div>
+                        <h3>SHAP Feature Explainability</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Why the model assigned this score —
+                            regulatorily mandated explainability</p>
+                    </div>
+                </div>
+                <div id="l5ShapNarrative"
+                    style="font-size:0.9rem;color:var(--text-secondary);font-style:italic;margin-bottom:1rem;padding:0.75rem;background:var(--surface-card);border-radius:8px;">
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
+                    <div>
+                        <h4 style="color:#10b981;margin-bottom:0.5rem;font-size:0.85rem;">⬆ Score Boosters (Top 3)</h4>
+                        <div id="l5ShapPositive"></div>
+                    </div>
+                    <div>
+                        <h4 style="color:#ef4444;margin-bottom:0.5rem;font-size:0.85rem;">⬇ Score Detractors (Top 3)
+                        </h4>
+                        <div id="l5ShapNegative"></div>
+                    </div>
+                </div>
+
+                <!-- LLM SHAP Explanation Section -->
+                <div style="margin-top:1.5rem;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+                        <h4
+                            style="font-size:0.9rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
+                            🤖 AI Decision Explanation</h4>
+                        <button id="btnGenerateShapExplain" onclick="generateShapExplanation()"
+                            style="padding:0.4rem 1rem;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:0.4rem;">
+                            <i data-lucide="sparkles" style="width:14px;height:14px;"></i> Generate AI Explanation
+                        </button>
+                    </div>
+                    <!-- Loading State -->
+                    <div id="shapExplainLoading"
+                        style="display:none;padding:1.5rem;text-align:center;background:var(--surface-card);border-radius:10px;">
+                        <div style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:0.5rem;">🧠 Groq LLM is
+                            analyzing the SHAP data...</div>
+                        <div style="height:4px;background:#1e293b;border-radius:2px;overflow:hidden;">
+                            <div
+                                style="height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6,#6366f1);border-radius:2px;animation:shimmer 1.5s infinite;background-size:200% 100%;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Explanation Content -->
+                    <div id="shapExplainContent" style="display:none;">
+                        <div
+                            style="background:linear-gradient(135deg,rgba(99,102,241,0.05),rgba(139,92,246,0.05));border:1px solid rgba(99,102,241,0.2);border-radius:12px;padding:1.5rem;">
+                            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;">
+                                <div
+                                    style="width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem;">
+                                    🤖</div>
+                                <div>
+                                    <div style="font-weight:600;font-size:0.9rem;">Groq LLaMA 4 — Credit Analysis</div>
+                                    <div style="font-size:0.75rem;color:var(--text-secondary);">Detailed explanation of
+                                        AI decision factors</div>
+                                </div>
+                                <span id="shapExplainCacheBadge"
+                                    style="margin-left:auto;font-size:0.7rem;padding:0.2rem 0.5rem;border-radius:6px;"></span>
+                            </div>
+                            <div id="shapExplainText"
+                                style="font-size:0.88rem;line-height:1.8;color:var(--text-primary);white-space:pre-wrap;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Error State -->
+                    <div id="shapExplainError"
+                        style="display:none;padding:1rem;background:rgba(239,68,68,0.1);border-radius:8px;border-left:3px solid #ef4444;font-size:0.85rem;color:#ef4444;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Row 4: Five Cs Card ── -->
+            <div class="card" id="l5FiveCsCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(245,158,11,0.2);">🔍</span>
+                    <div>
+                        <h3>Five Cs of Credit Assessment</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Groq LLM qualitative overlay —
+                            supplementing quantitative ML score</p>
+                    </div>
+                </div>
+                <div id="l5FiveCsGrid"
+                    style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:0.75rem;margin-bottom:1rem;">
+                </div>
+                <!-- Five Cs Explanations (always visible, not hidden) -->
+                <div id="l5FiveCsExplanations"
+                    style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem;"></div>
+                <div id="l5LlmOpinion"
+                    style="font-size:0.88rem;line-height:1.7;padding:1rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #6366f1;">
+                </div>
+                <div
+                    style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1rem;margin-top:1rem;">
+                    <div
+                        style="padding:0.75rem;background:rgba(239,68,68,0.08);border-radius:8px;border-left:3px solid #ef4444;">
+                        <div
+                            style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:#ef4444;margin-bottom:0.3rem;">
+                            ⚠ Biggest Unmodeled Risk</div>
+                        <div id="l5BiggestRisk" style="font-size:0.85rem;"></div>
+                    </div>
+                    <div
+                        style="padding:0.75rem;background:rgba(16,185,129,0.08);border-radius:8px;border-left:3px solid #10b981;">
+                        <div
+                            style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:#10b981;margin-bottom:0.3rem;">
+                            ✅ Biggest Unmodeled Strength</div>
+                        <div id="l5BiggestStrength" style="font-size:0.85rem;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Loan Structure, Hard Rules, Audit (moved here) ── -->
+            <!-- Loan Structure + MPBF -->
+            <div class="card" id="l5LoanCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(59,130,246,0.2);">💰</span>
+                    <div>
+                        <h3>Loan Structure &amp; MPBF Working Capital</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Nayak Committee Method II — RBI MPBF
+                            formula applied step-by-step</p>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
+                    <div>
+                        <h4
+                            style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;">
+                            Loan Components</h4>
+                        <table class="data-table" id="l5LoanTable">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Amount</th>
+                                    <th>Rate</th>
+                                    <th>Tenure</th>
+                                </tr>
+                            </thead>
+                            <tbody id="l5LoanBody"></tbody>
+                        </table>
+                        <div style="margin-top:1rem;">
+                            <h4
+                                style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;">
+                                Limit Calculation (min of 4 methods)</h4>
+                            <table class="data-table" id="l5LimitsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Method</th>
+                                        <th>Limit (₹L)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="l5LimitsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h4
+                            style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;">
+                            MPBF Breakdown (Nayak Method II)</h4>
+                        <div id="l5MpbfBreakdown"
+                            style="background:var(--surface-card);border-radius:8px;padding:0.75rem;font-size:0.85rem;">
+                        </div>
+                    </div>
+                </div>
+                <!-- Covenants -->
+                <h4
+                    style="font-size:0.85rem;color:var(--text-secondary);margin:1rem 0 0.5rem;text-transform:uppercase;">
+                    Covenants Attached</h4>
+                <div id="l5Covenants"></div>
+            </div>
+
+            <!-- Hard Rules Log -->
+            <div class="card" id="l5RulesCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(239,68,68,0.2);">📋</span>
+                    <div>
+                        <h3>Hard Rule Evaluation Log</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">RBI prudential norms + internal credit
+                            policy — evaluated before ML scoring</p>
+                    </div>
+                </div>
+                <table class="data-table" id="l5RulesTable">
+                    <thead>
+                        <tr>
+                            <th>Rule</th>
+                            <th>Condition Tested</th>
+                            <th>Result</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="l5RulesBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Audit Snapshot -->
+            <div class="card" id="l5AuditCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(139,92,246,0.2);">🔒</span>
+                    <div>
+                        <h3>RBI Audit Snapshot</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Tamper-evident — SHA-256 hash of
+                            feature vector + LLM opinion — 8 year retention</p>
+                    </div>
+                </div>
+                <div id="l5AuditBody" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;">
                 </div>
             </div>
         </section>
+
+        <!-- ═══════════════ SECTION: RISK SCORING (expanded Layer 5) — REMOVED, merged into scoring ═══════════════ -->
+        <section class="content-section" id="section-risk" style="display:none!important;">
+            <!-- SHAP Explainability -->
+            <div class="card" id="l5ShapCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(16,185,129,0.2);">📊</span>
+                    <div>
+                        <h3>SHAP Feature Explainability</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Why the model assigned this score —
+                            regulatorily mandated explainability</p>
+                    </div>
+                </div>
+                <div id="l5ShapNarrative"
+                    style="font-size:0.9rem;color:var(--text-secondary);font-style:italic;margin-bottom:1rem;padding:0.75rem;background:var(--surface-card);border-radius:8px;">
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
+                    <div>
+                        <h4 style="color:#10b981;margin-bottom:0.5rem;font-size:0.85rem;">⬆ Score Boosters (Top 3)</h4>
+                        <div id="l5ShapPositive"></div>
+                    </div>
+                    <div>
+                        <h4 style="color:#ef4444;margin-bottom:0.5rem;font-size:0.85rem;">⬇ Score Detractors (Top 3)
+                        </h4>
+                        <div id="l5ShapNegative"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Five Cs -->
+            <div class="card" id="l5FiveCsCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(245,158,11,0.2);">🔍</span>
+                    <div>
+                        <h3>Five Cs of Credit Assessment</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Groq LLM qualitative overlay —
+                            supplementing quantitative ML score</p>
+                    </div>
+                </div>
+                <div id="l5FiveCsGrid"
+                    style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:0.75rem;margin-bottom:1rem;">
+                </div>
+                <div id="l5LlmOpinion"
+                    style="font-size:0.88rem;line-height:1.7;padding:1rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #6366f1;">
+                </div>
+                <div
+                    style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1rem;margin-top:1rem;">
+                    <div
+                        style="padding:0.75rem;background:rgba(239,68,68,0.08);border-radius:8px;border-left:3px solid #ef4444;">
+                        <div
+                            style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:#ef4444;margin-bottom:0.3rem;">
+                            ⚠ Biggest Unmodeled Risk</div>
+                        <div id="l5BiggestRisk" style="font-size:0.85rem;"></div>
+                    </div>
+                    <div
+                        style="padding:0.75rem;background:rgba(16,185,129,0.08);border-radius:8px;border-left:3px solid #10b981;">
+                        <div
+                            style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.05em;color:#10b981;margin-bottom:0.3rem;">
+                            ✅ Biggest Unmodeled Strength</div>
+                        <div id="l5BiggestStrength" style="font-size:0.85rem;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loan Structure + MPBF -->
+            <div class="card" id="l5LoanCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(59,130,246,0.2);">💰</span>
+                    <div>
+                        <h3>Loan Structure &amp; MPBF Working Capital</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Nayak Committee Method II — RBI MPBF
+                            formula applied step-by-step</p>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
+                    <div>
+                        <h4
+                            style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;">
+                            Loan Components</h4>
+                        <table class="data-table" id="l5LoanTable">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Amount</th>
+                                    <th>Rate</th>
+                                    <th>Tenure</th>
+                                </tr>
+                            </thead>
+                            <tbody id="l5LoanBody"></tbody>
+                        </table>
+                        <div style="margin-top:1rem;">
+                            <h4
+                                style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;">
+                                Limit Calculation (min of 4 methods)</h4>
+                            <table class="data-table" id="l5LimitsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Method</th>
+                                        <th>Limit (₹L)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="l5LimitsBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h4
+                            style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;text-transform:uppercase;">
+                            MPBF Breakdown (Nayak Method II)</h4>
+                        <div id="l5MpbfBreakdown"
+                            style="background:var(--surface-card);border-radius:8px;padding:0.75rem;font-size:0.85rem;">
+                        </div>
+                    </div>
+                </div>
+                <!-- Covenants -->
+                <h4
+                    style="font-size:0.85rem;color:var(--text-secondary);margin:1rem 0 0.5rem;text-transform:uppercase;">
+                    Covenants Attached</h4>
+                <div id="l5Covenants"></div>
+            </div>
+
+            <!-- Hard Rules Log -->
+            <div class="card" id="l5RulesCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(239,68,68,0.2);">📋</span>
+                    <div>
+                        <h3>Hard Rule Evaluation Log</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">RBI prudential norms + internal credit
+                            policy — evaluated before ML scoring</p>
+                    </div>
+                </div>
+                <table class="data-table" id="l5RulesTable">
+                    <thead>
+                        <tr>
+                            <th>Rule</th>
+                            <th>Condition Tested</th>
+                            <th>Result</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="l5RulesBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Audit Snapshot -->
+            <div class="card" id="l5AuditCard" style="display:none;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(139,92,246,0.2);">🔒</span>
+                    <div>
+                        <h3>RBI Audit Snapshot</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Tamper-evident — SHA-256 hash of
+                            feature vector + LLM opinion — 8 year retention</p>
+                    </div>
+                </div>
+                <div id="l5AuditBody" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;">
+                </div>
+        </section><!-- end section-risk -->
 
         <!-- ═══════════════ SECTION: CAM REPORT ═══════════════ -->
         <section class="content-section" id="section-cam">
@@ -476,7 +956,8 @@
         <section class="content-section" id="section-decision">
             <div class="card">
                 <h3 class="card-title">Decision Engine</h3>
-                <div id="decisionEngine" class="empty-state">Final decision will appear here after pipeline completes
+                <div id="decisionEngine" class="empty-state">Final decision will appear here after pipeline
+                    completes
                 </div>
             </div>
         </section>
@@ -544,7 +1025,8 @@
                 <button class="btn btn-primary" onclick="showCreateRoleModal()"><i data-lucide="plus"
                         class="w-4 h-4 mr-1"></i> Create Role</button>
             </div>
-            <p class="section-desc">Drag and drop roles to organize hierarchy. Higher roles (Top) can manage lower roles
+            <p class="section-desc">Drag and drop roles to organize hierarchy. Higher roles (Top) can manage lower
+                roles
                 (Bottom).</p>
             <div class="card">
                 <div class="role-list" id="roleList">
@@ -783,18 +1265,21 @@
                 <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.5rem;">⚠ Reason is
                     <strong>mandatory</strong> for any override — it appears in the CAM and governance audit trail.
                 </div>
-                <table class="data-table" id="hitl3FeaturesTable">
-                    <thead>
-                        <tr>
-                            <th>Feature</th>
-                            <th>Computed Value</th>
-                            <th>Source</th>
-                            <th>Override Value</th>
-                            <th>Reason (mandatory if changed)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="hitl3FeaturesBody"></tbody>
-                </table>
+                <div
+                    style="max-height: 50vh; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+                    <table class="data-table" id="hitl3FeaturesTable" style="margin: 0; border: none;">
+                        <thead style="position: sticky; top: 0; background: var(--surface-default); z-index: 10;">
+                            <tr>
+                                <th>Feature</th>
+                                <th>Computed Value</th>
+                                <th>Source</th>
+                                <th>Override Value</th>
+                                <th>Reason (mandatory if changed)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hitl3FeaturesBody"></tbody>
+                    </table>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="skipL4Hitl3()">
@@ -802,6 +1287,52 @@
                 </button>
                 <button class="btn btn-primary" id="btnSubmitHitl3" onclick="submitL4Hitl3()">
                     <i data-lucide="check-circle"></i> Submit Overrides & Complete Layer 4
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ L5 HITL: HARD REJECT OVERRIDE ═══════════════ -->
+    <div class="modal-overlay" id="modalL5HitlReject" style="display:none; z-index:1100;">
+        <div class="modal modal-lg">
+            <div class="modal-header"
+                style="background: rgba(239, 68, 68, 0.1); border-bottom: 1px solid rgba(239, 68, 68, 0.2);">
+                <div>
+                    <h3 style="color: #ef4444;"><i data-lucide="alert-triangle"
+                            class="w-5 h-5 inline-block mr-2"></i>Layer 5 — Hard Reject Alert</h3>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.25rem;">
+                        A critical policy rule was violated. The system will auto-reject and halt the ML models unless
+                        explicitly overridden.
+                    </p>
+                </div>
+                <button class="modal-close" onclick="acceptL5Reject()">×</button>
+            </div>
+            <div class="modal-body">
+                <div
+                    style="background:var(--surface-card); border-left: 4px solid #ef4444; padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
+                    <div style="font-weight: 600; font-size: 0.9rem; color: #ef4444; margin-bottom: 0.5rem;"
+                        id="hitl5RejectRuleTitle">—</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary);" id="hitl5RejectReason">—</div>
+                </div>
+
+                <div style="margin-top: 1.5rem;">
+                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.4rem;">
+                        Override Justification (Required if overriding)
+                    </label>
+                    <textarea id="hitl5RejectOverrideReason" class="input" rows="3"
+                        placeholder="State why this regulatory/policy breach is acceptable..."></textarea>
+                    <div style="font-size:0.75rem; color: #f59e0b; margin-top:0.4rem;">
+                        ⚠ Overrides are permanently logged in the RBI Audit Snapshot and CAM.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end; gap: 1rem;">
+                <button class="btn btn-outline" style="border-color: #ef4444; color: #ef4444;"
+                    onclick="acceptL5Reject()">
+                    <i data-lucide="x-circle"></i> Accept Reject (Halt Pipeline)
+                </button>
+                <button class="btn btn-primary" onclick="overrideL5Reject()">
+                    <i data-lucide="shield-alert"></i> Override & Continue Pipeline
                 </button>
             </div>
         </div>

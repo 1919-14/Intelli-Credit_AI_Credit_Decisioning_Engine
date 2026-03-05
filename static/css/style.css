@@ -1531,3 +1531,14 @@ body {
     font-size: 0.75rem;
     font-weight: 600;
 }
+
+/* ═══════ SHIMMER ANIMATION FOR LLM LOADING ═══════ */
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
