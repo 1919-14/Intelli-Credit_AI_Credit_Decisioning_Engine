@@ -1,11 +1,12 @@
 import json
+import hashlib
 from datetime import datetime
 
-def process_layer6_decision(db_conn, app_id, user_id, user_role, user_name, has_large_loan_perm, action, reason, category):
+def process_layer6_decision(db_conn, app_id, user_id, user_role, user_name, has_large_loan_perm, action, reason, category, digital_signature_hash=''):
     """
     Evaluates the Layer 6 decision (Accept/Override).
     Handles Maker-Checker routing if the limit > 200 Lakhs.
-    Submits to Layer 7 if approved, or puts into PENDING_CHECKER state.
+    Stores comprehensive layer6_output for Layer 7 handoff.
 
     Returns: tuple(status_code, response_dict)
     """
@@ -24,14 +25,22 @@ def process_layer6_decision(db_conn, app_id, user_id, user_role, user_name, has_
         cur.close()
         return 400, {"error": "Override reason must be at least 50 characters."}
 
-    # Extract limit_lakhs from Layer 5 Output
+    # Extract limit_lakhs and AI decision from Layer 5 Output
     limit_lakhs = 0
+    ai_score = 0
+    ai_recommendation = ''
+    ai_risk_band = ''
+    ai_pd = 0
     l5_output = app_data.get('layer5_output')
     if l5_output:
         try:
             l5 = json.loads(l5_output) if isinstance(l5_output, str) else l5_output
             decision_summary = l5.get('decision_summary', {})
             limit_lakhs = decision_summary.get('sanction_amount_lakhs', 0)
+            ai_score = decision_summary.get('final_credit_score', 0)
+            ai_recommendation = decision_summary.get('decision', '')
+            ai_risk_band = decision_summary.get('risk_band', '')
+            ai_pd = decision_summary.get('probability_of_default', 0)
         except Exception:
             pass
 
@@ -57,27 +66,58 @@ def process_layer6_decision(db_conn, app_id, user_id, user_role, user_name, has_
                 is_checker_approval = True  # They had permission right away, so it counts as checker auth
 
     new_status = "approved" if action == "ACCEPT" else "overridden"
+    override_flag = 1 if action == "OVERRIDE" else 0
+    now = datetime.utcnow().isoformat()
     
-    decision_payload = {
-        "final_action": action,
-        "reason": reason,
-        "category": category,
-        "approved_by_id": user_id,
-        "approved_by_name": user_name,
-        "timestamp": datetime.utcnow().isoformat(),
+    # Generate digital signature hash if not provided
+    if not digital_signature_hash:
+        sig_payload = f"{app_id}:{user_id}:{action}:{reason}:{now}"
+        digital_signature_hash = hashlib.sha256(sig_payload.encode()).hexdigest()
+
+    # Build comprehensive Layer 6 output for Layer 7 handoff
+    layer6_output = {
+        "case_id": app_data.get('case_id', ''),
+        "company_name": app_data.get('company_name', ''),
+        "timestamp": now,
+        "ai_score": ai_score,
+        "ai_recommendation": ai_recommendation,
+        "ai_risk_band": ai_risk_band,
+        "ai_pd": ai_pd,
+        "officer_id": user_id,
+        "officer_name": user_name,
+        "officer_role": user_role,
+        "officer_decision": action,
+        "final_decision": new_status,
+        "override_flag": override_flag,
+        "override_reason": reason if override_flag else "",
+        "override_category": category if override_flag else "",
         "is_checker_approval": is_checker_approval,
-        "limit_lakhs": limit_lakhs
+        "checker_id": user_id if is_checker_approval else None,
+        "limit_lakhs": limit_lakhs,
+        "digital_signature_hash": digital_signature_hash,
+        "model_version": "model_xgb_credit_v4.3",
+        "ai_vs_human_match": (action == "ACCEPT"),
     }
 
-    cur.execute("UPDATE applications SET status=%s, current_layer=6, completed_at=NOW() WHERE id=%s", (new_status, app_id))
+    # Ensure layer6_output column exists
+    try:
+        cur.execute("ALTER TABLE applications ADD COLUMN layer6_output LONGTEXT DEFAULT NULL")
+        db_conn.commit()
+    except:
+        pass  # Column already exists
+
+    cur.execute(
+        "UPDATE applications SET status=%s, current_layer=6, completed_at=NOW(), layer6_output=%s WHERE id=%s",
+        (new_status, json.dumps(layer6_output), app_id)
+    )
 
     _log_audit(cur, user_id, 'L6_FINAL_APPROVAL' if not is_checker_approval else 'L6_CHECKER_APPROVAL', 
-              app_data['case_id'], decision_payload)
+              app_data['case_id'], layer6_output)
               
     db_conn.commit()
     cur.close()
     
-    return 200, {"status": new_status, "message": "Decision finalized and digitally logged."}
+    return 200, {"status": new_status, "message": "Decision finalized and digitally logged.", "digital_signature_hash": digital_signature_hash}
 
 def _update_to_pending_checker(cur, app_id):
     cur.execute("UPDATE applications SET status='PENDING_CHECKER' WHERE id=%s", (app_id,))
@@ -85,3 +125,4 @@ def _update_to_pending_checker(cur, app_id):
 def _log_audit(cur, actor_id, action, target, details):
     cur.execute("INSERT INTO audit_logs (actor_id, action, target, details) VALUES (%s,%s,%s,%s)",
                 (actor_id, action, target, json.dumps(details)))
+

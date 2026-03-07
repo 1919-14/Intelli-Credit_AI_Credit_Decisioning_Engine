@@ -750,6 +750,13 @@ def get_application(app_id):
         except:
             pass
 
+    # Parse layer6_output if present
+    if app_data.get('layer6_output'):
+        try:
+            app_data['layer6_output'] = json.loads(app_data['layer6_output'])
+        except:
+            pass
+
     # Get documents
     cur.execute("SELECT * FROM documents WHERE application_id=%s ORDER BY uploaded_at", (app_id,))
     docs = cur.fetchall()
@@ -1672,6 +1679,7 @@ def layer6_decision(app_id):
     action = data.get('action')           # 'ACCEPT', 'OVERRIDE'
     category = data.get('category', '')   # Dropdown categorization
     reason = data.get('reason', '')       # 50 char reason string
+    digital_signature_hash = data.get('digital_signature_hash', '')
     
     if action not in ('ACCEPT', 'OVERRIDE'):
         return jsonify({"error": "Invalid action."}), 400
@@ -1693,7 +1701,8 @@ def layer6_decision(app_id):
             has_large_loan_perm=has_large_loan_perm, 
             action=action, 
             reason=reason, 
-            category=category
+            category=category,
+            digital_signature_hash=digital_signature_hash
         )
         return jsonify(result), status_code
     except Exception as e:
@@ -1701,6 +1710,86 @@ def layer6_decision(app_id):
         conn.rollback()
         return jsonify({"error": str(e)}), 500
     finally:
+        conn.close()
+
+
+# ─── Layer 6 Override Pattern Analytics ──────────────────────────────────────
+@app.route('/api/layer6/override_analytics', methods=['GET'])
+@login_required
+@permission_required('APPROVE_LARGE_LOAN')
+def layer6_override_analytics():
+    """
+    Returns override pattern analytics for governance review.
+    - Override rate by officer
+    - AI vs Human alignment score
+    """
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    try:
+        # Get all L6 audit entries
+        cur.execute("""
+            SELECT a.actor_id, u.full_name, a.action, a.details, a.timestamp
+            FROM audit_logs a LEFT JOIN users u ON a.actor_id = u.id
+            WHERE a.action IN ('L6_FINAL_APPROVAL', 'L6_CHECKER_APPROVAL', 'L6_MAKER_SUBMIT')
+            ORDER BY a.timestamp DESC
+        """)
+        logs = cur.fetchall()
+
+        # Compute per-officer override rates
+        officer_stats = {}
+        total_decisions = 0
+        total_overrides = 0
+        total_matches = 0
+
+        for log in logs:
+            details = log.get('details', '{}')
+            if isinstance(details, str):
+                try:
+                    details = json.loads(details)
+                except:
+                    details = {}
+
+            officer_name = log.get('full_name', f"User #{log['actor_id']}")
+            officer_decision = details.get('officer_decision', details.get('final_action', ''))
+
+            if officer_name not in officer_stats:
+                officer_stats[officer_name] = {'total': 0, 'overrides': 0, 'accepts': 0}
+
+            officer_stats[officer_name]['total'] += 1
+            total_decisions += 1
+
+            if officer_decision == 'OVERRIDE' or details.get('override_flag') == 1:
+                officer_stats[officer_name]['overrides'] += 1
+                total_overrides += 1
+            else:
+                officer_stats[officer_name]['accepts'] += 1
+                total_matches += 1
+
+        # Format response
+        officer_breakdown = []
+        for name, stats in officer_stats.items():
+            rate = (stats['overrides'] / stats['total'] * 100) if stats['total'] > 0 else 0
+            officer_breakdown.append({
+                'officer_name': name,
+                'total_decisions': stats['total'],
+                'overrides': stats['overrides'],
+                'accepts': stats['accepts'],
+                'override_rate_pct': round(rate, 1),
+            })
+
+        alignment_pct = (total_matches / total_decisions * 100) if total_decisions > 0 else 0
+
+        return jsonify({
+            'total_decisions': total_decisions,
+            'total_overrides': total_overrides,
+            'ai_human_alignment_pct': round(alignment_pct, 1),
+            'officer_breakdown': sorted(officer_breakdown, key=lambda x: x['override_rate_pct'], reverse=True),
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
         conn.close()
 
 
