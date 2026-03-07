@@ -1542,3 +1542,26 @@ body {
         background-position: -200% 0;
     }
 }
+
+/* ═══════ DECISION SUMMARY STYLING ═══════ */
+#decisionSummary ul {
+    list-style-type: none;
+    padding-left: 0;
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+#decisionSummary li {
+    position: relative;
+    padding-left: 1.25rem;
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+}
+
+#decisionSummary li::before {
+    content: "•";
+    color: var(--accent-blue);
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}

@@ -1897,6 +1897,51 @@ function populateRiskScoringView(l5) {
 
         // KPI tiles
         const score = ds.final_credit_score || 0;
+
+        // ─── Legacy Decision Summary (Updated for LLM Bullets) ──────
+        const dSumArea = document.getElementById('decisionSummary');
+        if (dSumArea) {
+            let summaryHtml = '';
+            if (ds.llm_decision_summary) {
+                // Parse simple markdown: **bold**, __bold__, *italic*, _italic_
+                let parsedMd = ds.llm_decision_summary
+                    .replace(/(\*\*|__)(.*?)\1/g, '<strong>$2</strong>')
+                    .replace(/(\*|_)(.*?)\1/g, '<em>$2</em>');
+
+                // Fix LLM markdown sometimes appearing purely on one line (e.g. "Text * bullet * bullet")
+                parsedMd = parsedMd.replace(/(^|\s)([\*|\-])\s/g, '\n- ');
+
+                const lines = parsedMd.split('\n').map(l => l.trim()).filter(l => l);
+                let inList = false;
+                let finalHtml = '';
+
+                for (let line of lines) {
+                    if (line.startsWith('-')) {
+                        if (!inList) {
+                            finalHtml += '<ul style="list-style-type:disc; padding-left:1.5rem; margin-top:0.5rem; margin-bottom:0.5rem; line-height:1.6; font-size:0.9rem; color:var(--text-secondary);">';
+                            inList = true;
+                        }
+                        finalHtml += `<li>${line.substring(1).trim()}</li>`;
+                    } else {
+                        if (inList) {
+                            finalHtml += '</ul>';
+                            inList = false;
+                        }
+                        finalHtml += `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6; margin-bottom:0.5rem;">${line}</p>`;
+                    }
+                }
+                if (inList) finalHtml += '</ul>';
+
+                summaryHtml = finalHtml || `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6;">${ds.llm_decision_summary}</p>`;
+            } else {
+                // Fallback to basic text if no LLM summary
+                const conditionsText = (ds.conditions || []).length ? ` Conditions: ${ds.conditions.join(', ')}` : '';
+                summaryHtml = `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6;">The AI Engine has determined a <strong>${ds.decision}</strong> decision with a score of ${score}.${conditionsText}</p>`;
+            }
+
+            dSumArea.innerHTML = summaryHtml;
+            dSumArea.classList.remove('empty-state');
+        }
         const bandColors = { 'Very Low Risk': '#10b981', 'Low Risk': '#6366f1', 'Moderate Risk': '#f59e0b', 'High Risk': '#ef4444', 'Very High Risk': '#ef4444' };
         const bandColor = bandColors[ds.risk_band] || '#6b7280';
 
