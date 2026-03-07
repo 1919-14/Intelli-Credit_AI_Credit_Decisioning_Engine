@@ -138,9 +138,10 @@ def init_database():
 
     # ─── Seed Default Roles ──────────────────────────────────────────────────
     default_roles = [
-        ("SUPER_ADMIN", json.dumps(["*"]), json.dumps(["CREDIT_ANALYST", "VIEWER"]), 1, "Full System Control"),
-        ("CREDIT_ANALYST", json.dumps(["CREATE_APP","RUN_PIPELINE","VIEW_RESULTS","VIEW_HISTORY","VIEW_APP"]), json.dumps(["VIEWER"]), 2, "Credit Analyst"),
-        ("VIEWER", json.dumps(["VIEW_RESULTS","VIEW_HISTORY","VIEW_APP"]), json.dumps([]), 3, "Read-Only Viewer"),
+        ("SUPER_ADMIN", json.dumps(["*"]), json.dumps(["SENIOR_CREDIT_MANAGER", "CREDIT_ANALYST", "VIEWER"]), 1, "Full System Control"),
+        ("SENIOR_CREDIT_MANAGER", json.dumps(["CREATE_APP","RUN_PIPELINE","VIEW_RESULTS","VIEW_HISTORY","VIEW_APP","APPROVE_LARGE_LOAN"]), json.dumps(["CREDIT_ANALYST", "VIEWER"]), 2, "Senior Manager"),
+        ("CREDIT_ANALYST", json.dumps(["CREATE_APP","RUN_PIPELINE","VIEW_RESULTS","VIEW_HISTORY","VIEW_APP"]), json.dumps(["VIEWER"]), 3, "Credit Analyst"),
+        ("VIEWER", json.dumps(["VIEW_RESULTS","VIEW_HISTORY","VIEW_APP"]), json.dumps([]), 4, "Read-Only Viewer"),
     ]
     for r in default_roles:
         cur.execute("""
@@ -1524,23 +1525,9 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
             "status": "error", "error": str(e)
         }, room=f'app_{app_id}')
 
-    # ─── Layer 6: CAM Generation (placeholder) ───────────────────────────
-    socketio.emit('layer_progress', {"layer": 6, "name": "CAM Generation", "status": "processing", "pct": 50},
-                  room=f'app_{app_id}')
-    time.sleep(1.5)
-    socketio.emit('layer_complete', {"layer": 6, "name": "CAM Generation", "status": "done"},
-                  room=f'app_{app_id}')
-
-    # Mark application as completed
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE applications SET status='completed', completed_at=NOW() WHERE id=%s", (app_id,))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    socketio.emit('pipeline_complete', {"app_id": app_id, "case_id": case_id, "status": "completed"},
-                  room=f'app_{app_id}')
+    # Pipeline pauses here for Layer 6: Human-in-the-Loop Officer Sign-off.
+    # The frontend will display the L6 action bar.
+    # We do NOT mark the application as 'completed' here.
 
 
 
@@ -1654,6 +1641,67 @@ def shap_explain(app_id):
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to generate explanation: {str(e)}"}), 500
+
+
+# ─── Layer 6 Endpoints ────────────────────────────────────────────────────────
+
+@app.route('/api/applications/pending_checker', methods=['GET'])
+@login_required
+@permission_required('APPROVE_LARGE_LOAN')
+def get_pending_checker_apps():
+    """Returns a list of applications waiting for Checker approval."""
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT id, case_id, company_name, created_at FROM applications WHERE status='PENDING_CHECKER' ORDER BY created_at DESC")
+    results = cur.fetchall()
+    for row in results:
+        if row.get('created_at'):
+            row['created_at'] = row['created_at'].isoformat()
+    cur.close()
+    conn.close()
+    return jsonify(results)
+
+@app.route('/api/applications/<int:app_id>/layer6_decision', methods=['POST'])
+@login_required
+def layer6_decision(app_id):
+    """
+    Called when an officer Accepts or Overrides the AI decision.
+    Validates Maker-Checker rules for loans > 200 Lakhs.
+    """
+    data = request.json or {}
+    action = data.get('action')           # 'ACCEPT', 'OVERRIDE'
+    category = data.get('category', '')   # Dropdown categorization
+    reason = data.get('reason', '')       # 50 char reason string
+    
+    if action not in ('ACCEPT', 'OVERRIDE'):
+        return jsonify({"error": "Invalid action."}), 400
+
+    user_id = session.get('user_id')
+    user_role = session.get('role', 'UNKNOWN')
+    user_name = session.get('full_name', 'Unknown User')
+    has_large_loan_perm = has_permission('APPROVE_LARGE_LOAN')
+
+    conn = get_db()
+    try:
+        from layer6.step1_hitl_decision import process_layer6_decision
+        status_code, result = process_layer6_decision(
+            db_conn=conn, 
+            app_id=app_id, 
+            user_id=user_id, 
+            user_role=user_role, 
+            user_name=user_name, 
+            has_large_loan_perm=has_large_loan_perm, 
+            action=action, 
+            reason=reason, 
+            category=category
+        )
+        return jsonify(result), status_code
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────

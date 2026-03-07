@@ -261,6 +261,54 @@ def run_layer5(
             print(f"  ⚠ Decision failed: {e}")
             decision_result = {"decision": "CONDITIONAL", "conditions": [], "covenants": []}
 
+    # ─── PARALLEL GROUP P2.5: LLM Decision Summary Narrative ────
+    # Generate a bulleted explanation of the decision
+    if progress_callback:
+        progress_callback("Generating decision narrative summary...", 85)
+    
+    decision_val = decision_result.get("decision", "CONDITIONAL")
+    score_val = fusion["final_score"]
+    
+    try:
+        from groq import Groq
+        import os
+        client = Groq(api_key=os.getenv("API_KEY", ""))
+        
+        prompt = f"""You are a senior credit risk officer at Intelli-Credit.
+Write a clear, professional decision summary for the following credit application.
+CRITICAL INSTRUCTIONS:
+- You must ONLY write a bulleted list.
+- Start every bullet with a hyphen and a space ("- ").
+- Separate every bullet with a newline (\\n).
+- DO NOT write any introductory text (e.g. "Decision Summary:").
+- DO NOT write any concluding remarks.
+
+Application Context:
+- Final Decision: {decision_val}
+- Final Credit Score: {score_val} / 900
+- Conditions applied: {'; '.join(decision_result.get('conditions', ['None']))}
+- Biggest Risk Factor: {llm_result.get('biggest_risk', 'Unknown')}
+- Rejection reason (if any): {decision_result.get('reason', 'N/A')}
+
+Required Content:
+"""
+        if decision_val == "REJECT":
+            prompt += "- Provide 2-3 bullet points clearly explaining the exact reasons for rejection.\n- Provide 1-2 bullet points with actionable advice on how the applicant can improve their profile to get approved in the future."
+        else:
+            prompt += "- Provide 2-3 bullet points explaining why the application was approved, highlighting the core strengths.\n- Provide 1-2 bullet points documenting the primary risk factors (including the biggest risk factor mentioned above) and what conditions or covenants were applied.\n- Provide 1 bullet point with advice on how to improve the credit profile further."
+            
+        resp = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            temperature=0.3, 
+            max_tokens=300
+        )
+        decision_result["llm_decision_summary"] = resp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"  ⚠ Decision Summary LLM failed: {e}")
+        decision_result["llm_decision_summary"] = f"- Decision: {decision_val}\n- Automated summary generation failed."
+
+
     # Loan structure (needs pricing result)
     try:
         loan_result = compute_loan_structure(

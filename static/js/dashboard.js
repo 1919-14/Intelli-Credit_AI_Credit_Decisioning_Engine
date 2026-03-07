@@ -65,6 +65,14 @@ function applyPermissionGating(perms) {
             el.style.display = 'none';
         }
     });
+
+    // Special Checker Queue Visibility
+    if (isSuperAdmin || perms.includes('APPROVE_LARGE_LOAN')) {
+        const navItem = document.getElementById('navCheckerQueue');
+        if (navItem) {
+            navItem.style.display = '';
+        }
+    }
 }
 
 
@@ -83,11 +91,26 @@ function initSocket() {
         updateLayerStatus(data.layer, 'done');
         // Enable this layer's section in the sidebar
         enableLayerNav(data.layer);
+
+        // If Layer 5 just finished, reveal the manual Layer 6 sign-off tools
+        if (data.layer === 5 && STATE.currentApp) {
+            const l6Trigger = document.getElementById('l6TriggerContainer');
+            if (l6Trigger) {
+                l6Trigger.style.display = 'block';
+            }
+        }
+
         // Auto-show the next layer after a brief pause
         setTimeout(() => {
             const nextLayer = data.layer + 1;
-            if (nextLayer <= 7) {
+            if (nextLayer <= 7 && data.layer !== 5) { // Stop auto-progress if manual action required in L6
                 updateLayerStatus(nextLayer, 'processing', 0);
+            } else if (data.layer === 5) {
+                const statusEl = document.getElementById('activeAppStatus');
+                if (statusEl) {
+                    statusEl.innerHTML = '<span class="status-dot"></span> Awaiting Officer Review';
+                    statusEl.style.color = '#f59e0b';
+                }
             }
         }, 1200);
     });
@@ -1897,6 +1920,51 @@ function populateRiskScoringView(l5) {
 
         // KPI tiles
         const score = ds.final_credit_score || 0;
+
+        // ─── Legacy Decision Summary (Updated for LLM Bullets) ──────
+        const dSumArea = document.getElementById('decisionSummary');
+        if (dSumArea) {
+            let summaryHtml = '';
+            if (ds.llm_decision_summary) {
+                // Parse simple markdown: **bold**, __bold__, *italic*, _italic_
+                let parsedMd = ds.llm_decision_summary
+                    .replace(/(\*\*|__)(.*?)\1/g, '<strong>$2</strong>')
+                    .replace(/(\*|_)(.*?)\1/g, '<em>$2</em>');
+
+                // Fix LLM markdown sometimes appearing purely on one line (e.g. "Text * bullet * bullet")
+                parsedMd = parsedMd.replace(/(^|\s)([\*|\-])\s/g, '\n- ');
+
+                const lines = parsedMd.split('\n').map(l => l.trim()).filter(l => l);
+                let inList = false;
+                let finalHtml = '';
+
+                for (let line of lines) {
+                    if (line.startsWith('-')) {
+                        if (!inList) {
+                            finalHtml += '<ul style="list-style-type:disc; padding-left:1.5rem; margin-top:0.5rem; margin-bottom:0.5rem; line-height:1.6; font-size:0.9rem; color:var(--text-secondary);">';
+                            inList = true;
+                        }
+                        finalHtml += `<li>${line.substring(1).trim()}</li>`;
+                    } else {
+                        if (inList) {
+                            finalHtml += '</ul>';
+                            inList = false;
+                        }
+                        finalHtml += `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6; margin-bottom:0.5rem;">${line}</p>`;
+                    }
+                }
+                if (inList) finalHtml += '</ul>';
+
+                summaryHtml = finalHtml || `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6;">${ds.llm_decision_summary}</p>`;
+            } else {
+                // Fallback to basic text if no LLM summary
+                const conditionsText = (ds.conditions || []).length ? ` Conditions: ${ds.conditions.join(', ')}` : '';
+                summaryHtml = `<p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.6;">The AI Engine has determined a <strong>${ds.decision}</strong> decision with a score of ${score}.${conditionsText}</p>`;
+            }
+
+            dSumArea.innerHTML = summaryHtml;
+            dSumArea.classList.remove('empty-state');
+        }
         const bandColors = { 'Very Low Risk': '#10b981', 'Low Risk': '#6366f1', 'Moderate Risk': '#f59e0b', 'High Risk': '#ef4444', 'Very High Risk': '#ef4444' };
         const bandColor = bandColors[ds.risk_band] || '#6b7280';
 
@@ -2171,6 +2239,15 @@ function populateRiskScoringView(l5) {
             </div>`
         ).join('');
     }
+
+    // ─── Layer 6 Trigger Un-hide ─────────────────────────────────────────
+    if (STATE.currentApp && STATE.currentApp.current_layer >= 5) {
+        // Only show if the loan isn't already fully approved or overridden
+        if (!['approved', 'overridden', 'completed'].includes(STATE.currentApp.status)) {
+            const l6Trigger = document.getElementById('l6TriggerContainer');
+            if (l6Trigger) l6Trigger.style.display = 'block';
+        }
+    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -2338,6 +2415,179 @@ async function generateShapExplanation() {
             btn.disabled = false;
             btn.innerHTML = `<i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Regenerate`;
             if (window.lucide) lucide.createIcons();
+        }
+    }
+}
+
+// ─── Layer 6 Logic (Maker-Checker & Overrides) ────────────────────────────────
+
+async function loadCheckerQueue() {
+    const list = document.getElementById('checkerQueueContainer');
+    if (!list) return;
+
+    try {
+        const res = await fetch('/api/applications/pending_checker');
+        const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
+
+        if (!data.length) {
+            list.innerHTML = '<div class="empty-state">No pending approvals require your attention.</div>';
+            return;
+        }
+
+        list.innerHTML = data.map(app => `
+            <div class="doc-item" style="border-left: 3px solid var(--accent-blue); padding: 0.75rem; background: var(--surface-card); border-radius: 6px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight: 600; font-size: 0.95rem;">${app.company_name}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">Case ID: ${app.case_id} — Waiting for Checker</div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="loadCheckerApp(${app.id})">Review & Sign-Off</button>
+            </div>
+        `).join('');
+    } catch (e) {
+        showToast('❌ Failed to fetch checker queue: ' + e.message);
+    }
+}
+
+async function loadCheckerApp(appId) {
+    if (!appId) return;
+    showToast('Loading application for review...');
+    await loadApplicationData(appId);
+    switchSection('scoring');
+
+    // Explicitly unhide the action bar since it might not be triggered by socket if already done
+    const l6Bar = document.getElementById('l6ActionBar');
+    if (l6Bar) l6Bar.style.display = 'block';
+}
+
+function showL6OverrideModal() {
+    document.getElementById('l6OverrideReason').value = '';
+    document.getElementById('l6OverrideCharCount').textContent = '0 / 50 characters minimum';
+    document.getElementById('l6OverrideCharCount').style.color = '#ef4444';
+    document.getElementById('btnSubmitL6Override').disabled = true;
+
+    document.getElementById('l6OverrideReason').addEventListener('input', function () {
+        const len = this.value.trim().length;
+        const cnt = document.getElementById('l6OverrideCharCount');
+        const btn = document.getElementById('btnSubmitL6Override');
+
+        cnt.textContent = `${len} / 50 characters minimum`;
+        if (len >= 50) {
+            cnt.style.color = '#10b981';
+            btn.disabled = false;
+        } else {
+            cnt.style.color = '#ef4444';
+            btn.disabled = true;
+        }
+    });
+
+    document.getElementById('modalL6Override').style.display = 'flex';
+}
+
+function closeL6OverrideModal() {
+    document.getElementById('modalL6Override').style.display = 'none';
+}
+
+async function submitL6Decision(actionType, overrideReason = '', overrideCategory = '') {
+    const appId = STATE.currentApp?.id;
+    if (!appId) {
+        showToast('❌ No active application');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/applications/${appId}/layer6_decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                action: actionType,
+                reason: overrideReason,
+                category: overrideCategory
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+            showToast('❌ Error: ' + data.error);
+            return;
+        }
+
+        showToast('✅ ' + (data.message || 'Decision logged successfully'));
+
+        if (actionType === 'OVERRIDE') closeL6OverrideModal();
+
+        // Hide L6 bar since decision is made
+        document.getElementById('l6ActionBar').style.display = 'none';
+
+        if (data.status === 'pending_checker') {
+            loadCheckerQueue();  // Refresh queue table just in case they have perm to see it
+            return;
+        }
+
+        // If fully approved, backend actually triggers Layer 7 or we can listen to pipeline complete
+        // Or we can manually trigger CAM report API here
+        showToast('⚙️ Proceeding to CAM Generation (Layer 7)...');
+
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Failed to submit decision: ' + e.message);
+    }
+}
+
+function submitL6Override() {
+    const reason = document.getElementById('l6OverrideReason').value.trim();
+    const category = document.getElementById('l6OverrideCategory').value;
+
+    if (reason.length < 50) {
+        showToast('❌ Override reason must be extensive (min 50 chars)');
+        return;
+    }
+
+    submitL6Decision('OVERRIDE', reason, category);
+}
+
+function openCheckerQueueModal() {
+    loadCheckerQueue();
+    document.getElementById('modalCheckerQueue').style.display = 'flex';
+}
+
+function showL6ActionBar() {
+    // Hide the trigger container
+    const l6Trigger = document.getElementById('l6TriggerContainer');
+    if (l6Trigger) l6Trigger.style.display = 'none';
+
+    // Show the action bar
+    const l6Bar = document.getElementById('l6ActionBar');
+    if (l6Bar) {
+        l6Bar.style.display = 'block';
+        // Find if amount > 200L to show checker warning
+        const notice = document.getElementById('l6CheckerNotice');
+        if (notice) notice.style.display = 'none';
+
+        try {
+            const l5String = STATE.currentApp.layer5_output;
+            const l5Out = typeof l5String === 'string' ? JSON.parse(l5String) : l5String;
+
+            let amt = 0;
+            const loan = l5Out?.loan || {};
+            if (loan.loan_structure && loan.loan_structure.total_sanctioned_lakhs) {
+                amt = loan.loan_structure.total_sanctioned_lakhs;
+            } else if (loan.approved_amount_lakhs) {
+                amt = loan.approved_amount_lakhs;
+            } else {
+                const ds = l5Out?.decision_summary || {};
+                amt = ds.sanction_amount_lakhs || 0;
+            }
+
+            console.log("Determined loan amount for L6 threshold:", amt);
+
+            if (amt > 200) {
+                if (notice) notice.style.display = 'block';
+            }
+        } catch (e) {
+            console.error("Error evaluating threshold", e);
         }
     }
 }

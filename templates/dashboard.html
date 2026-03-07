@@ -88,6 +88,11 @@
                 <span class="nav-icon"><i data-lucide="clock"></i></span>
                 <span class="nav-label">History</span>
             </a>
+            <a class="nav-item" id="navCheckerQueue" onclick="openCheckerQueueModal()"
+                style="display:none; cursor:pointer;">
+                <span class="nav-icon"><i data-lucide="shield-check"></i></span>
+                <span class="nav-label">Pending Approvals</span>
+            </a>
             <a class="nav-item" data-section="users" onclick="showSection('users')" id="navUsers" style="display:none;">
                 <span class="nav-icon"><i data-lucide="users"></i></span>
                 <span class="nav-label">User Management</span>
@@ -208,6 +213,8 @@
                 </div>
             </div>
         </section>
+
+
 
         <!-- ═══════════════ SECTION: DATA INGESTION ═══════════════ -->
         <section class="content-section" id="section-ingestion">
@@ -942,6 +949,38 @@
                 </div>
                 <div id="l5AuditBody" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.83rem;">
                 </div>
+            </div>
+
+            <!-- Layer 6: Officer Sign-off Action Bar -->
+            <div id="l6ActionBar"
+                style="display:none; margin-top: 2rem; background: var(--surface-card); border-top: 4px solid var(--accent-blue); padding: 1.5rem; border-radius: 8px;">
+                <div style="display:flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <h3 style="margin-bottom: 0.25rem;"><i data-lucide="pen-tool"
+                                class="w-5 h-5 inline-block text-blue-500 mr-2"></i>Layer 6: Credit Officer Sign-off
+                        </h3>
+                        <p style="color: var(--text-secondary); font-size: 0.85rem;">Review the ML decision. Accept to
+                            proceed to CAM generation, or explicitly Override with justification.</p>
+                        <div id="l6CheckerNotice"
+                            style="display:none; background: rgba(245, 158, 11, 0.1); border-left: 3px solid #f59e0b; padding: 0.5rem; margin-top: 0.75rem; font-size: 0.8rem; color: #d97706;">
+                            <i data-lucide="info" class="w-4 h-4 inline-block mr-1"></i> Loan amount exceeds ₹200L
+                            threshold. Your decision will be routed to a Senior Credit Manager for final Maker-Checker
+                            approval.
+                        </div>
+                    </div>
+                    <div style="display:flex; gap: 1rem;">
+                        <button class="btn btn-outline" style="border-color: #f59e0b; color: #d97706;"
+                            onclick="showL6OverrideModal()">
+                            <i data-lucide="edit-3"></i> Override Decision
+                        </button>
+                        <button class="btn btn-primary" onclick="submitL6Decision('ACCEPT')"
+                            style="background: #10b981; border-color: #10b981;">
+                            <i data-lucide="check-circle"></i> Accept AI Decision
+                        </button>
+                    </div>
+                </div>
+            </div>
+
         </section><!-- end section-risk -->
 
         <!-- ═══════════════ SECTION: CAM REPORT ═══════════════ -->
@@ -1288,6 +1327,78 @@
                 <button class="btn btn-primary" id="btnSubmitHitl3" onclick="submitL4Hitl3()">
                     <i data-lucide="check-circle"></i> Submit Overrides & Complete Layer 4
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ L6 HITL: OFFICER OVERRIDE MODAL ═══════════════ -->
+    <div class="modal-overlay" id="modalL6Override" style="display:none; z-index:1100;">
+        <div class="modal">
+            <div class="modal-header"
+                style="background: rgba(245, 158, 11, 0.1); border-bottom: 1px solid rgba(245, 158, 11, 0.2);">
+                <div>
+                    <h3 style="color: #d97706;"><i data-lucide="pencil" class="w-5 h-5 inline-block mr-2"></i>Override
+                        AI Decision</h3>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.25rem;">
+                        As per RBI guidelines, overriding the ML model requires a mandatory justification log.
+                    </p>
+                </div>
+                <button class="modal-close" onclick="closeL6OverrideModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.4rem;">Override
+                        Category</label>
+                    <select id="l6OverrideCategory" class="input" style="width:100%;">
+                        <option value="Policy Exception">Policy Exception</option>
+                        <option value="Risk Appetite">Risk Appetite Alignment</option>
+                        <option value="Client Relationship">Strategic Client Relationship</option>
+                        <option value="New Information Found">New Material Information</option>
+                        <option value="Other">Other (Specify in notes)</option>
+                    </select>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.4rem;">
+                        Override Justification (Minimum 50 chars)
+                    </label>
+                    <textarea id="l6OverrideReason" class="input" rows="4"
+                        placeholder="Detail exactly why the AI decision is being overridden..."></textarea>
+                    <div id="l6OverrideCharCount"
+                        style="font-size:0.75rem; color: #f59e0b; margin-top:0.4rem; text-align:right;">
+                        0 / 50 characters minimum
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: flex-end; gap: 1rem;">
+                <button class="btn btn-outline" onclick="closeL6OverrideModal()">Cancel</button>
+                <button class="btn btn-primary" id="btnSubmitL6Override" onclick="submitL6Override()" disabled>
+                    <i data-lucide="check"></i> Submit Override
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ L6: CHECKER QUEUE MODAL ═══════════════ -->
+    <div class="modal-overlay" id="modalCheckerQueue" style="display:none; z-index:1100;">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin-bottom: 0.25rem;"><i data-lucide="shield-check"
+                            class="w-5 h-5 inline-block mr-2 text-blue-500"></i>Pending Checker Approvals</h3>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0;">
+                        Applications waiting for Senior Credit Manager review (Limit > ₹200L).
+                    </p>
+                </div>
+                <button class="modal-close" onclick="closeModal('modalCheckerQueue')">×</button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <div style="margin-bottom: 1rem; text-align: right;">
+                    <button class="btn btn-outline btn-sm" onclick="loadCheckerQueue()"><i data-lucide="refresh-cw"></i>
+                        Refresh</button>
+                </div>
+                <div class="doc-queue" id="checkerQueueContainer">
+                    <div class="empty-state">No pending approvals require your attention.</div>
+                </div>
             </div>
         </div>
     </div>
