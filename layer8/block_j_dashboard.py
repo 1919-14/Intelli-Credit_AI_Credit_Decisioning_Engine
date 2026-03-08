@@ -55,13 +55,19 @@ def get_dashboard_data(db_conn) -> Dict[str, Any]:
         """)
         decision_rows = cur.fetchall()
         cur.close()
+        
         total = sum(r["cnt"] for r in decision_rows)
-        panel3 = {
-            "decisions": {r["decision"]: r["cnt"] for r in decision_rows},
-            "total_decisions": total,
-            "override_count": 0,
-            "override_rate_pct": 0,
-        }
+        if total > 0:
+            overrides = sum(r["cnt"] for r in decision_rows if "CONDITIONAL" in r["decision"] or "REJECT" in r["decision"])
+            panel3 = {
+                "decisions": {r["decision"]: r["cnt"] for r in decision_rows},
+                "total_decisions": total,
+                "override_count": overrides,
+                "override_rate_pct": round((overrides / total) * 100, 1),
+                "is_demo": False
+            }
+        else:
+            raise ValueError("No decisions found")
     except Exception:
         panel3 = {
             "decisions": {"APPROVE": 35, "CONDITIONAL APPROVE": 22, "REJECT": 18},

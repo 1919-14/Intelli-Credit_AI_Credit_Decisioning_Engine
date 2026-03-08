@@ -11,6 +11,173 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- jQuery & DataTables -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
+    <!-- Custom DataTables Styling overrrides for dark mode -->
+    <style>
+        .dataTables_wrapper {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 1.5rem;
+        }
+
+        /* Length & Search Layout */
+        .dataTables_wrapper .dataTables_length {
+            display: inline-block;
+            margin-bottom: 1.25rem;
+        }
+
+        .dataTables_wrapper .dataTables_filter {
+            display: block;
+            width: 100%;
+            margin-bottom: 1.25rem;
+            text-align: left;
+        }
+
+        .dataTables_wrapper .dataTables_filter label {
+            display: block;
+            width: 100%;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* Beautiful Input Fields: Search & Length Select */
+        .dataTables_wrapper .dataTables_length select,
+        .dataTables_wrapper .dataTables_filter input {
+            background: rgba(15, 23, 42, 0.6);
+            /* deeply dark glass */
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            color: #ffffff;
+            /* white text */
+            border-radius: 8px;
+            padding: 0.6rem 1rem;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .dataTables_wrapper .dataTables_filter input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Full width for search input */
+        .dataTables_wrapper .dataTables_filter input {
+            width: 100%;
+            margin-left: 0;
+            margin-top: 0.5rem;
+            font-size: 0.95rem;
+            display: block;
+        }
+
+        .dataTables_wrapper .dataTables_length select:focus,
+        .dataTables_wrapper .dataTables_filter input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), inset 0 2px 4px rgba(0, 0, 0, 0.2);
+            background: rgba(15, 23, 42, 0.9);
+        }
+
+        /* Pagination Styling */
+        .dataTables_wrapper .dataTables_paginate {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.25rem;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button {
+            color: var(--text-secondary) !important;
+            background: var(--surface-card);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            padding: 0.4rem 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin: 0 !important;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+            color: #ffffff !important;
+            border: none;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3);
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+            background: var(--surface-hover) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid rgba(99, 102, 241, 0.4);
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button.disabled,
+        .dataTables_wrapper .dataTables_paginate .paginate_button.disabled:hover {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: var(--surface-card) !important;
+            color: var(--text-secondary) !important;
+            border: 1px solid var(--border);
+            box-shadow: none;
+        }
+
+        .dataTables_wrapper .dataTables_info {
+            color: var(--text-secondary);
+            margin-top: 1rem;
+            font-weight: 500;
+        }
+
+        /* Custom styling for the Date Range Inputs */
+        .date-range-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 0.75rem 1.25rem;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .date-range-container label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .date-filter-input {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            border-radius: 6px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.85rem;
+            color-scheme: dark;
+            /* Force dark calendar picker in modern browsers */
+            transition: all 0.2s;
+        }
+
+        .date-filter-input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        /* Table Borders */
+        table.dataTable.no-footer {
+            border-bottom: 1px solid var(--border);
+        }
+
+        table.dataTable thead th,
+        table.dataTable thead td {
+            border-bottom: 1px solid var(--border);
+        }
+    </style>
 </head>
 
 <body>
@@ -1239,9 +1406,36 @@
         <!-- ═══════════════ SECTION: HISTORY ═══════════════ -->
         <section class="content-section" id="section-history">
             <div class="card">
-                <h3 class="card-title">Application History</h3>
-                <div class="table-wrap">
-                    <table class="data-table">
+                <div
+                    style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <h3 class="card-title" style="margin:0; margin-bottom: 0.25rem;">Application History</h3>
+                        <p style="color:var(--text-secondary); font-size:0.85rem; margin:0;">Filter and view past AI
+                            credit decisions.</p>
+                    </div>
+
+                    <div class="date-range-container">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <i data-lucide="calendar"
+                                style="width: 14px; height: 14px; color: var(--text-secondary);"></i>
+                            <label for="historyStartDate">From</label>
+                            <input type="date" id="historyStartDate" class="date-filter-input">
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <label for="historyEndDate">To</label>
+                            <input type="date" id="historyEndDate" class="date-filter-input">
+                        </div>
+
+                        <button class="btn btn-outline btn-sm" onclick="clearHistoryFilters()"
+                            style="margin-left: 0.5rem; display: flex; align-items: center; gap: 4px;">
+                            <i data-lucide="x" style="width: 14px; height: 14px;"></i> Clear
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-wrap" style="margin-top:0.5rem;">
+                    <table class="data-table" id="historyTable" style="width:100%;">
                         <thead>
                             <tr>
                                 <th>Case ID</th>
@@ -1309,23 +1503,27 @@
             </div>
         </section>
 
-        
-        
+
+
 
         <!-- ═══════════════ SECTION: GOVERNANCE L8 ═══════════════ -->
         <section class="content-section" id="section-governance">
 
-            <!-- Banner Header -->
             <div class="gov-section-banner">
                 <div>
                     <h2 class="gov-banner-title">&#127959; Governance, Monitoring &amp; Compliance</h2>
-                    <p class="gov-banner-sub">RBI MRM Draft Circular (Aug 2024) &middot; DPDP Act 2023 &middot; CRILC Reporting &middot; Basel II</p>
+                    <p class="gov-banner-sub">RBI MRM Draft Circular (Aug 2024) &middot; DPDP Act 2023 &middot; CRILC
+                        Reporting &middot; Basel II</p>
                 </div>
                 <div class="gov-banner-badges">
                     <span class="gov-badge gov-badge-green">&#10003; Live Monitoring</span>
                     <span class="gov-badge gov-badge-amber">&#128198; Quarterly IMV</span>
                     <span class="gov-badge gov-badge-grey">&#128196; CRILC Compliant</span>
-                    <button class="btn btn-outline btn-sm" onclick="loadGovernance()" style="margin-left:8px;">&#x21BA; Refresh All</button>
+                    <button class="btn btn-primary btn-sm" onclick="generateRealMetrics()" id="btnGenerateMetrics"
+                        style="margin-left:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;">&#9881;&#65039;
+                        Generate Real Metrics</button>
+                    <button class="btn btn-outline btn-sm" onclick="loadGovernance()" style="margin-left:8px;">&#x21BA;
+                        Refresh All</button>
                 </div>
             </div>
 
@@ -1334,19 +1532,26 @@
 
                 <div class="card">
                     <div class="card-header" style="margin-bottom:0.75rem;">
-                        <span class="card-icon" style="background:linear-gradient(135deg,rgba(99,102,241,0.3),rgba(139,92,246,0.2));">&#128200;</span>
+                        <span class="card-icon"
+                            style="background:linear-gradient(135deg,rgba(99,102,241,0.3),rgba(139,92,246,0.2));">&#128200;</span>
                         <div>
                             <h3 style="margin:0 0 2px;">Model Performance Metrics</h3>
-                            <p style="font-size:0.76rem;color:var(--text-secondary);margin:0;">RBI MRM Circular &sect;4.2 &mdash; AUC, KS, Gini, Brier thresholds</p>
+                            <p style="font-size:0.76rem;color:var(--text-secondary);margin:0;">RBI MRM Circular
+                                &sect;4.2 &mdash; AUC, KS, Gini, Brier thresholds</p>
                         </div>
                     </div>
-                    <div id="govPanel1"><div class="empty-state" style="padding:2rem;">&#8987; Loading metrics&hellip;</div></div>
+                    <div id="govPanel1">
+                        <div class="empty-state" style="padding:2rem;">&#8987; Loading metrics&hellip;</div>
+                    </div>
                 </div>
 
                 <div class="card" style="display:flex;flex-direction:column;">
                     <div class="card-title">&#128194; Model Registry (RMCB)</div>
-                    <div id="govModelInventory" style="flex:1;"><div class="empty-state">Loading&hellip;</div></div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <div id="govModelInventory" style="flex:1;">
+                        <div class="empty-state">Loading&hellip;</div>
+                    </div>
+                    <div
+                        style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);">
                         <button class="btn btn-outline btn-sm"
                             onclick="showExplanationModal(STATE.currentApp &amp;&amp; STATE.currentApp.case_id)"
                             style="flex:1;font-size:0.72rem;">
@@ -1366,11 +1571,15 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
                 <div class="card">
                     <div class="card-title">&#127777; PSI Feature Drift &mdash; 25 Credit Features</div>
-                    <div id="govPanel2"><div class="empty-state">Loading&hellip;</div></div>
+                    <div id="govPanel2">
+                        <div class="empty-state">Loading&hellip;</div>
+                    </div>
                 </div>
                 <div class="card">
                     <div class="card-title">&#9878;&#65039; Decision &amp; Override Patterns</div>
-                    <div id="govPanel3"><div class="empty-state">Loading&hellip;</div></div>
+                    <div id="govPanel3">
+                        <div class="empty-state">Loading&hellip;</div>
+                    </div>
                 </div>
             </div>
 
@@ -1378,18 +1587,25 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
                 <div class="card">
                     <div class="card-title">&#128680; SMA / NPA Early Warning Dashboard</div>
-                    <div id="govPanel4"><div class="empty-state">Loading&hellip;</div></div>
+                    <div id="govPanel4">
+                        <div class="empty-state">Loading&hellip;</div>
+                    </div>
                 </div>
                 <div class="card">
                     <div class="card-title">&#128260; Model Retraining Pipeline</div>
-                    <div id="govPanel5"><div class="empty-state">Loading&hellip;</div></div>
+                    <div id="govPanel5">
+                        <div class="empty-state">Loading&hellip;</div>
+                    </div>
                 </div>
             </div>
 
             <!-- Row 4: CRILC Full-width -->
             <div class="card">
-                <div class="card-title">&#128203; CRILC Submissions &mdash; RBI Mandated (Exposures &ge; &#8377;5 Cr)</div>
-                <div id="govPanel6"><div class="empty-state">Loading&hellip;</div></div>
+                <div class="card-title">&#128203; CRILC Submissions &mdash; RBI Mandated (Exposures &ge; &#8377;5 Cr)
+                </div>
+                <div id="govPanel6">
+                    <div class="empty-state">Loading&hellip;</div>
+                </div>
             </div>
 
         </section>
@@ -1400,12 +1616,15 @@
                 <div class="modal-header">
                     <div>
                         <h3 style="margin:0 0 2px;">&#128221; AI Decision Explanation</h3>
-                        <p style="font-size:0.75rem;color:var(--text-secondary);margin:0;">Sec. 14 &mdash; DPDP Act 2023 &middot; Right to Explanation</p>
+                        <p style="font-size:0.75rem;color:var(--text-secondary);margin:0;">Sec. 14 &mdash; DPDP Act 2023
+                            &middot; Right to Explanation</p>
                     </div>
-                    <span class="close" onclick="document.getElementById('modalExplanation').style.display='none'">&times;</span>
+                    <span class="close"
+                        onclick="document.getElementById('modalExplanation').style.display='none'">&times;</span>
                 </div>
                 <div class="modal-body">
-                    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(99,102,241,0.08);border-radius:8px;border:1px solid rgba(99,102,241,0.2);margin-bottom:1rem;">
+                    <div
+                        style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(99,102,241,0.08);border-radius:8px;border:1px solid rgba(99,102,241,0.2);margin-bottom:1rem;">
                         <span style="font-size:0.75rem;color:var(--text-secondary);">Case ID:</span>
                         <strong id="explanationCaseId" style="color:#a5b4fc;">&mdash;</strong>
                     </div>
