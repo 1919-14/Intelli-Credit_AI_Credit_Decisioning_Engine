@@ -2,7 +2,7 @@
   "meta": {
     "case_id": "IC-2025-001",
     "company_name": "Unknown",
-    "extraction_timestamp": "2026-03-03T23:48:33.073157Z",
+    "extraction_timestamp": "2026-03-08T20:03:41.213055Z",
     "schema_version": "3.0",
     "pipeline_version": "3.1.0",
     "llm_model": "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -11,56 +11,56 @@
     "documents_processed": {
       "SRC_BANK": {
         "filename": "sbi_statement_12m.pdf",
-        "file_hash": "sha256:671b9b",
+        "file_hash": "sha256:a9d19b",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_FS": {
         "filename": "financials_FY24.pdf",
-        "file_hash": "sha256:46d27f",
+        "file_hash": "sha256:1dfc11",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_GST": {
         "filename": "gstr3b_FY24.pdf",
-        "file_hash": "sha256:2aca89",
+        "file_hash": "sha256:08490c",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_ITR": {
         "filename": "itr6_FY24.pdf",
-        "file_hash": "sha256:47c9cf",
+        "file_hash": "sha256:901034",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_BMM": {
         "filename": "board_minutes_2024.pdf",
-        "file_hash": "sha256:c352b6",
+        "file_hash": "sha256:9dd502",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_RAT": {
         "filename": "crisil_rating_2024.pdf",
-        "file_hash": "sha256:81e385",
+        "file_hash": "sha256:52c5bc",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_SHP": {
         "filename": "shareholding_Q3.pdf",
-        "file_hash": "sha256:1bd08d",
+        "file_hash": "sha256:f61509",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
       },
       "SRC_AR": {
         "filename": "annual_report_FY24.pdf",
-        "file_hash": "sha256:d0edb8",
+        "file_hash": "sha256:18de09",
         "pages": 1,
         "ocr_used": true,
         "extraction_confidence": 0.7
