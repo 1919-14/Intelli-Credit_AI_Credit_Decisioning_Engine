@@ -30,6 +30,16 @@ Key capabilities include:
 
 ---
 
+## 🌟 Additional Enterprise Features
+Beyond the core AI scoring engine, Intelli-Credit ships with a suite of enterprise-grade auxiliary systems to ensure security, auditability, and team collaboration:
+
+- 🖋️ **Digital Signaturing (Maker-Checker):** Cryptographically enforced sign-offs required by authorized Credit Officers before an AI decision is finalized, ensuring accountability.
+- 🕒 **Comprehensive History & Audit Logs:** A dedicated, searchable Application History view (powered by DataTables) that retains full historical records, decisions, AI explanations, and CAM reports for every processed application.
+- 👥 **User Management System:** Administrators can seamlessly onboard new loan officers, analysts, and managers, assigning them direct platform access.
+- 🔐 **Dynamic Role Hierarchy & RBAC:** Fine-grained Role-Based Access Control allowing institutions to dynamically create and assign custom roles (e.g., *Junior Analyst*, *Senior Officer*). The system enforces hierarchical permissions, determining who can bypass AI hard-rejects or execute pipeline overrides.
+
+---
+
 ## 🔄 System Architecture & Data Flow
 
 Our system processes applications through a rigorous 8-Layer Pipeline. 
@@ -203,5 +213,3 @@ Intelli-Credit/
 
 ---
 *Developed by PraxisCode X for the Intelli-Credit Challenge.*
-```
-
