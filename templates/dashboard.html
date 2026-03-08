@@ -441,15 +441,25 @@
 
                 <!-- Overall Risk Score + Decision -->
                 <div class="card" id="l5DecisionCard" style="display:none;">
-                    <div class="card-header">
-                        <span class="card-icon" style="background:rgba(99,102,241,0.2);">🏦</span>
-                        <div>
-                            <h3>Credit Decision — Layer 5 Output</h3>
-
+                    <div class="card-header" style="align-items: flex-start;">
+                        <div style="display:flex; gap:1rem; align-items:center;">
+                            <span class="card-icon" style="background:rgba(99,102,241,0.2);">🏦</span>
+                            <div>
+                                <h3 style="margin-bottom:0.2rem;">Credit Decision — Layer 5 Output</h3>
+                                <p style="color:var(--text-secondary);font-size:0.8rem;margin:0;">Pending final review
+                                </p>
+                            </div>
                         </div>
-                        <br><br>
-                        <span id="l5DecisionBadge"
-                            style="margin-left:auto;padding:0.4rem 1.2rem;border-radius:999px;font-weight:700;font-size:1rem;">—</span>
+                        <div
+                            style="margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; gap:0.5rem;">
+                            <span id="l5DecisionBadge"
+                                style="padding:0.4rem 1.2rem;border-radius:999px;font-weight:700;font-size:1rem;">—</span>
+                            <button id="btnOpenHitlModal" onclick="openPendingHitlModal()"
+                                style="display:none; padding:0.4rem 1rem; background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; border:none; border-radius:6px; font-size:0.8rem; font-weight:600; cursor:pointer;"
+                                title="Modify the AI Decision, Sanction Amount, or Interest Rate">
+                                ⚖️ Review & Override Decision
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Overall Risk Gauge with actual score -->
@@ -859,6 +869,9 @@
                             formula applied step-by-step</p>
                     </div>
                 </div>
+                <div id="l5HitlOverrideNote"
+                    style="display:none; margin-bottom:1rem; padding:0.75rem; background:var(--surface-card); border-left:4px solid #ef4444; border-radius:8px; line-height:1.5; font-size:0.85rem;">
+                </div>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1rem;">
                     <div>
                         <h4
@@ -946,9 +959,242 @@
 
         <!-- ═══════════════ SECTION: CAM REPORT ═══════════════ -->
         <section class="content-section" id="section-cam">
-            <div class="card">
-                <h3 class="card-title">CAM Report — Structured Report</h3>
-                <div id="camReport" class="empty-state">CAM report will be generated after all layers complete</div>
+            <!-- CAM Header with RBI Logo -->
+            <div class="card" style="border-left: 4px solid #6366f1;">
+                <div class="card-header" style="align-items:center;">
+                    <div style="display:flex;align-items:center;gap:1rem;">
+                        <div
+                            style="width:48px;height:48px;background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">
+                            🏛️</div>
+                        <div>
+                            <h3 style="margin:0;">Credit Appraisal Memorandum (CAM)</h3>
+                            <p style="color:var(--text-secondary);font-size:0.8rem;margin:0;">RBI-Compliant Format • 13
+                                Sections • Tamper-Evident</p>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;margin-left:auto;">
+                        <button class="btn btn-primary" onclick="downloadCAM('docx')" id="btnDownloadDocx"
+                            style="padding:0.5rem 1rem;font-size:0.82rem;">
+                            <i data-lucide="file-text" style="width:14px;height:14px;"></i> Download DOCX
+                        </button>
+                        <button class="btn btn-outline" onclick="downloadCAM('pdf')" id="btnDownloadPdf"
+                            style="padding:0.5rem 1rem;font-size:0.82rem;">
+                            <i data-lucide="file-down" style="width:14px;height:14px;"></i> Download PDF
+                        </button>
+                        <button class="btn btn-outline" onclick="downloadCAM('json')" id="btnDownloadJson"
+                            style="padding:0.5rem 0.7rem;font-size:0.75rem;">
+                            📋 Audit JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CAM Metadata Dashboard -->
+            <div
+                style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.25rem;">
+                <div class="card" style="text-align:center;padding:1rem;">
+                    <div
+                        style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
+                        CAM Hash (SHA-256)</div>
+                    <div id="camHash"
+                        style="font-size:0.85rem;font-weight:600;font-family:monospace;word-break:break-all;color:#6366f1;">
+                        —</div>
+                </div>
+                <div class="card" style="text-align:center;padding:1rem;">
+                    <div
+                        style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
+                        Sections</div>
+                    <div id="camSections" style="font-size:1.8rem;font-weight:800;color:#10b981;">—</div>
+                </div>
+                <div class="card" style="text-align:center;padding:1rem;">
+                    <div
+                        style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
+                        Generated At</div>
+                    <div id="camTimestamp" style="font-size:0.85rem;font-weight:600;">—</div>
+                </div>
+                <div class="card" style="text-align:center;padding:1rem;">
+                    <div
+                        style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">
+                        Tamper Status</div>
+                    <div id="camTamper" style="font-size:0.85rem;font-weight:700;color:#10b981;">🔒 VERIFIED</div>
+                </div>
+            </div>
+
+            <!-- Digital Signature Panel -->
+            <div class="card" id="camSignatureCard" style="border-left:4px solid #8b5cf6;">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(139,92,246,0.2);">✍️</span>
+                    <div>
+                        <h3>Digital Signature — Maker/Checker Sign-off</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Apply digital signature to finalize the
+                            CAM report</p>
+                    </div>
+                </div>
+                <div id="camSignatureContent">
+                    <div id="camSignatureUnsigned"
+                        style="padding:1rem;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px;">
+                        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+                            <div style="flex:1;">
+                                <div style="font-weight:600;margin-bottom:0.5rem;color:#f59e0b;">⚠ Pending Digital
+                                    Signature</div>
+                                <p style="font-size:0.85rem;color:var(--text-secondary);margin:0;">This CAM report
+                                    requires digital sign-off before it can be submitted to the credit committee. The
+                                    signature creates a tamper-evident SHA-256 hash linking the officer to the report.
+                                </p>
+                            </div>
+                            <button class="btn btn-primary" onclick="applyDigitalSignature()" id="btnDigitalSign"
+                                style="padding:0.6rem 1.5rem;background:linear-gradient(135deg,#8b5cf6,#6366f1);font-size:0.9rem;white-space:nowrap;">
+                                <i data-lucide="pen-tool" style="width:16px;height:16px;"></i> Apply Digital Signature
+                            </button>
+                        </div>
+                    </div>
+                    <div id="camSignatureSigned"
+                        style="display:none;padding:1rem;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:10px;">
+                        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+                            <div
+                                style="width:48px;height:48px;background:rgba(16,185,129,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">
+                                ✅</div>
+                            <div style="flex:1;">
+                                <div style="font-weight:700;color:#10b981;margin-bottom:0.25rem;">Digitally Signed</div>
+                                <div style="font-size:0.85rem;color:var(--text-secondary);">
+                                    Signed by: <strong id="sigOfficerName">—</strong> |
+                                    Role: <span id="sigOfficerRole">—</span> |
+                                    <span id="sigTimestamp">—</span>
+                                </div>
+                                <div style="font-size:0.75rem;font-family:monospace;color:#6366f1;margin-top:0.3rem;">
+                                    Signature Hash: <span id="sigHash">—</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audit Summary -->
+            <div class="card" id="camAuditCard">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(59,130,246,0.2);">📊</span>
+                    <div>
+                        <h3>CAM Audit Summary</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">Key metrics extracted by Layer 7 for
+                            the CAM document</p>
+                    </div>
+                </div>
+                <div id="camAuditGrid"
+                    style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0.75rem;">
+                </div>
+            </div>
+
+            <!-- Five Cs Rating Summary for CAM -->
+            <div class="card" id="camFiveCsCard">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(245,158,11,0.2);">🔍</span>
+                    <div>
+                        <h3>Five Cs Rating (CAM Summary)</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">As documented in Section 10 of the CAM
+                        </p>
+                    </div>
+                </div>
+                <div id="camFiveCsGrid"
+                    style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem;">
+                </div>
+            </div>
+
+            <!-- CAM Section Index -->
+            <div class="card" id="camSectionIndex">
+                <div class="card-header">
+                    <span class="card-icon" style="background:rgba(99,102,241,0.2);">📑</span>
+                    <div>
+                        <h3>CAM Document Sections</h3>
+                        <p style="color:var(--text-secondary);font-size:0.8rem;">13-section RBI-compliant format</p>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.5rem;">
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #6366f1;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§1</span>
+                        Cover Page & Case Metadata
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #6366f1;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§2</span>
+                        Executive Summary & KYC/AML Sign-off
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #6366f1;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§3</span>
+                        Borrower & Promoter Net Worth Statement
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #6366f1;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§4</span>
+                        Loan Proposal & Drawing Power
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #10b981;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§5</span>
+                        Financial Analysis & Cash Flow
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #10b981;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§6</span>
+                        Existing Debt Obligations Schedule
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #f59e0b;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§7</span>
+                        Security & Collateral Schedule
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #f59e0b;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§8</span>
+                        Sector & Industry Risk (E&S)
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #ef4444;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§9</span>
+                        AI Risk Score & Stress Test
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #ef4444;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§10</span>
+                        Forensic Alert Summary
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #8b5cf6;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§11</span>
+                        Five Cs of Credit
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #8b5cf6;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§12</span>
+                        SWOT Analysis
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #10b981;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">§13</span>
+                        Recommendations & Maker/Checker Sign-off
+                    </div>
+                    <div class="cam-section-item"
+                        style="padding:0.6rem;background:var(--surface-card);border-radius:8px;border-left:3px solid #64748b;">
+                        <span
+                            style="font-size:0.7rem;background:#374151;padding:0.1rem 0.4rem;border-radius:4px;margin-right:0.5rem;">App</span>
+                        Evidence Panel (12 data sources)
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -1037,6 +1283,99 @@
     </main>
 
     <!-- ═══════════════════ MODALS ═══════════════════ -->
+
+    <!-- Modal: Layer 5 AI Decision Explainer (Reject logic) -->
+    <div class="modal-overlay" id="hitlRejectModal" style="display:none;">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3><span style="color:#ef4444;">⚠</span> AI Rejection Override</h3>
+                <span class="close" onclick="closeHitlRejectModal()">&times;</span>
+            </div>
+            <div class="modal-body" style="font-size:0.9rem;">
+                <p>The AI has <strong>REJECTED</strong> this application. Overriding a model rejection requires
+                    Chief
+                    Risk Officer (CRO) level approval and a detailed justification.</p>
+                <textarea id="hitlRejectReason" rows="4" style="width:100%;margin-top:1rem;color:#000;"
+                    placeholder="Enter justification for manual rejection override..."></textarea>
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:1rem;">
+                    <button class="btn btn-outline" onclick="closeHitlRejectModal()">Cancel</button>
+                    <button class="btn btn-primary" style="background:#ef4444;color:white;"
+                        onclick="submitHitlReject()">Confirm Override (Log to Audit)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Layer 6 Final Decision Override (HITL) -->
+    <div class="modal-overlay" id="hitlDecisionModal" style="display:none;">
+        <div class="modal" style="max-width: 650px; border-left: 4px solid #8b5cf6;">
+            <div class="modal-header">
+                <h3><span style="font-size:1.2rem;">⚖️</span> Layer 6: Final Decision Review</h3>
+                <span class="close" onclick="closeHitlDecisionModal()">&times;</span>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto; padding-right: 1rem;">
+                <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1rem;">
+                    Please review the AI's final credit decision before proceeding to CAM Generation.
+                </p>
+
+                <div
+                    style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;background:var(--surface-card);padding:1rem;border-radius:8px;">
+                    <div>
+                        <label
+                            style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;">Decision</label>
+                        <select id="hitlDecSelect"
+                            style="width:100%;padding:0.5rem;background:#1a1a2e;color:#fff;border:1px solid #374151;border-radius:4px;">
+                            <option value="APPROVE">APPROVE</option>
+                            <option value="CONDITIONAL">CONDITIONAL</option>
+                            <option value="REJECT">REJECT</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;">Sanction
+                            Amount (₹ Lakhs)</label>
+                        <input type="number" id="hitlDecAmount"
+                            style="width:100%;padding:0.5rem;background:#1a1a2e;color:#fff;border:1px solid #374151;border-radius:4px;" />
+                    </div>
+                    <div>
+                        <label style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;">Interest
+                            Rate (%)</label>
+                        <input type="number" step="0.1" id="hitlDecRate"
+                            style="width:100%;padding:0.5rem;background:#1a1a2e;color:#fff;border:1px solid #374151;border-radius:4px;" />
+                    </div>
+                </div>
+
+                <div id="hitlDecOverrideReasonBlock" style="margin-top:1rem;">
+                    <label style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;">Reason
+                        for Override (Required if changing AI decision)</label>
+                    <textarea id="hitlDecReason" rows="3"
+                        style="width:100%;padding:0.5rem;background:#1a1a2e;color:#fff;border:1px solid #374151;border-radius:4px;margin-top:5px;"
+                        placeholder="e.g. Relationship value overrides minor ML score penalty..."></textarea>
+                </div>
+
+                <div id="hitlDecRiskWarning"
+                    style="display:none;margin-top:1rem;padding:1rem;background:rgba(239,68,68,0.1);border-left:4px solid #ef4444;border-radius:4px;">
+                    <div
+                        style="color:#ef4444;font-weight:700;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem;">
+                        <span>⚠</span> Risk Assessment of Your Override
+                    </div>
+                    <ul id="hitlDecRiskBullets"
+                        style="font-size:0.85rem;color:var(--text-primary);margin:0;padding-left:1.2rem;line-height:1.5;">
+                    </ul>
+                </div>
+
+                <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:1.5rem;">
+                    <button class="btn btn-outline" onclick="submitHitlDecision(false)" id="btnAcceptAi">Accept
+                        AI Decision</button>
+                    <button class="btn btn-primary" style="background:#ef4444;color:white;border:none;"
+                        onclick="handleHitlOverride()" id="btnOverrideAi">Override Decision</button>
+                    <button class="btn btn-primary" style="display:none;background:#ef4444;color:white;border:none;"
+                        onclick="submitHitlDecision(true)" id="btnConfirmOverride">Confirm Risky
+                        Override</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- New Application Modal -->
     <div class="modal-overlay" id="modalNewApp" style="display:none;">
         <div class="modal">
@@ -1129,7 +1468,8 @@
             <div class="modal-header hitl-header">
                 <div>
                     <h3><i data-lucide="scan-eye" class="w-5 h-5 inline-block mr-2"></i>AI Document Review</h3>
-                    <p class="hitl-subtitle" id="hitlSubtitle">Please verify the AI-detected document types before
+                    <p class="hitl-subtitle" id="hitlSubtitle">Please verify the AI-detected document types
+                        before
                         processing continues.</p>
                 </div>
                 <button class="modal-close" onclick="cancelHitlReview()">&times;</button>
@@ -1177,7 +1517,8 @@
         <div class="modal modal-lg">
             <div class="modal-header" style="background:linear-gradient(135deg,#7c1d1d,#991b1b);">
                 <div>
-                    <h3><i data-lucide="alert-triangle" class="w-5 h-5 inline-block mr-2"></i>HITL Review 1 of 3 —
+                    <h3><i data-lucide="alert-triangle" class="w-5 h-5 inline-block mr-2"></i>HITL Review 1 of 3
+                        —
                         Forensic Flag Review</h3>
                     <p style="opacity:0.8;font-size:0.85rem;">Review AI-detected GST & bank anomalies before web
                         research runs. Dismiss false positives with a reason.</p>
@@ -1187,7 +1528,8 @@
             <div class="modal-body">
                 <div
                     style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;">
-                    ⚠️ <strong>Pipeline is paused.</strong> Dismissing a flag removes its score penalty and excludes it
+                    ⚠️ <strong>Pipeline is paused.</strong> Dismissing a flag removes its score penalty and
+                    excludes it
                     from the CAM. Every action is logged with your reason for governance audit.
                 </div>
                 <div id="hitl1AlertsContainer"></div>
@@ -1208,9 +1550,11 @@
         <div class="modal modal-lg">
             <div class="modal-header" style="background:linear-gradient(135deg,#1e3a5f,#1e4d8c);">
                 <div>
-                    <h3><i data-lucide="globe" class="w-5 h-5 inline-block mr-2"></i>HITL Review 2 of 3 — Web Research
+                    <h3><i data-lucide="globe" class="w-5 h-5 inline-block mr-2"></i>HITL Review 2 of 3 — Web
+                        Research
                         Classification</h3>
-                    <p style="opacity:0.8;font-size:0.85rem;">AI classified these web search results. Dismiss incorrect
+                    <p style="opacity:0.8;font-size:0.85rem;">AI classified these web search results. Dismiss
+                        incorrect
                         or irrelevant findings with a reason.</p>
                 </div>
                 <button class="modal-close" onclick="skipL4Hitl2()">×</button>
@@ -1218,7 +1562,8 @@
             <div class="modal-body">
                 <div
                     style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1rem;font-size:0.85rem;">
-                    💡 Each dismissed finding is removed from the alert list and not counted in the risk score. Source
+                    💡 Each dismissed finding is removed from the alert list and not counted in the risk score.
+                    Source
                     URLs are shown for verification.
                 </div>
                 <!-- Tabs -->
@@ -1249,9 +1594,11 @@
         <div class="modal modal-lg">
             <div class="modal-header" style="background:linear-gradient(135deg,#14532d,#166534);">
                 <div>
-                    <h3><i data-lucide="sliders-horizontal" class="w-5 h-5 inline-block mr-2"></i>HITL Review 3 of 3 —
+                    <h3><i data-lucide="sliders-horizontal" class="w-5 h-5 inline-block mr-2"></i>HITL Review 3
+                        of 3 —
                         Feature Override Panel</h3>
-                    <p style="opacity:0.8;font-size:0.85rem;">Review the computed credit features before ML scoring.
+                    <p style="opacity:0.8;font-size:0.85rem;">Review the computed credit features before ML
+                        scoring.
                         Override values with a documented reason — all changes are logged in the CAM.</p>
                 </div>
                 <button class="modal-close" onclick="skipL4Hitl3()">×</button>
@@ -1263,7 +1610,8 @@
                         style="color:var(--text-secondary);">—</span>
                 </div>
                 <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.5rem;">⚠ Reason is
-                    <strong>mandatory</strong> for any override — it appears in the CAM and governance audit trail.
+                    <strong>mandatory</strong> for any override — it appears in the CAM and governance audit
+                    trail.
                 </div>
                 <div
                     style="max-height: 50vh; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
@@ -1301,7 +1649,8 @@
                     <h3 style="color: #ef4444;"><i data-lucide="alert-triangle"
                             class="w-5 h-5 inline-block mr-2"></i>Layer 5 — Hard Reject Alert</h3>
                     <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 0.25rem;">
-                        A critical policy rule was violated. The system will auto-reject and halt the ML models unless
+                        A critical policy rule was violated. The system will auto-reject and halt the ML models
+                        unless
                         explicitly overridden.
                     </p>
                 </div>
@@ -1312,7 +1661,8 @@
                     style="background:var(--surface-card); border-left: 4px solid #ef4444; padding: 1rem; border-radius: 6px; margin-bottom: 1rem;">
                     <div style="font-weight: 600; font-size: 0.9rem; color: #ef4444; margin-bottom: 0.5rem;"
                         id="hitl5RejectRuleTitle">—</div>
-                    <div style="font-size: 0.85rem; color: var(--text-secondary);" id="hitl5RejectReason">—</div>
+                    <div style="font-size: 0.85rem; color: var(--text-secondary);" id="hitl5RejectReason">—
+                    </div>
                 </div>
 
                 <div style="margin-top: 1.5rem;">
@@ -1343,9 +1693,11 @@
         <div class="modal modal-lg">
             <div class="modal-header" style="background: linear-gradient(135deg, #1e3a5f, #2d5a87);">
                 <div>
-                    <h3><i data-lucide="clipboard-list" class="w-5 h-5 inline-block mr-2"></i>Credit Officer Site-Visit
+                    <h3><i data-lucide="clipboard-list" class="w-5 h-5 inline-block mr-2"></i>Credit Officer
+                        Site-Visit
                         Notes</h3>
-                    <p style="opacity:0.8;font-size:0.85rem;">Optional — AI will extract structured insights from your
+                    <p style="opacity:0.8;font-size:0.85rem;">Optional — AI will extract structured insights
+                        from your
                         observations</p>
                 </div>
                 <button class="modal-close" onclick="skipOfficerNotes()">&times;</button>

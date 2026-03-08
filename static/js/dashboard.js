@@ -83,6 +83,25 @@ function initSocket() {
         updateLayerStatus(data.layer, 'done');
         // Enable this layer's section in the sidebar
         enableLayerNav(data.layer);
+
+        // Fetch partial data so UI updates mid-pipeline
+        if (STATE.currentApp && STATE.currentApp.id) {
+            loadApplicationData(STATE.currentApp.id);
+        }
+
+        // Layer 6 CAM complete — auto-populate CAM view
+        if (data.layer === 6 && data.audit) {
+            populateCAMView({
+                cam_hash: data.cam_hash || '',
+                sections: data.sections || 13,
+                timestamp: new Date().toISOString(),
+                audit: data.audit || {},
+                digital_signature: null,
+            });
+            // Auto-navigate to CAM tab after brief delay
+            setTimeout(() => showSection('cam'), 2000);
+        }
+
         // Auto-show the next layer after a brief pause
         setTimeout(() => {
             const nextLayer = data.layer + 1;
@@ -115,7 +134,15 @@ function initSocket() {
     STATE.socket.on('hitl_review_needed', (data) => {
         console.log('HITL review needed:', data);
         STATE._hitlAppId = data.app_id;
-        showHitlReviewModal(data);
+
+        if (data.layer === "6_decision") {
+            STATE._pendingHitlDecisionData = data;
+            const btn = document.getElementById('btnOpenHitlModal');
+            if (btn) btn.style.display = 'block';
+            showToast('⚖️ Action Required: Review & Override Final AI Decision');
+        } else {
+            showHitlReviewModal(data);
+        }
     });
 
     STATE.socket.on('pipeline_resumed', (data) => {
@@ -312,6 +339,7 @@ function showSection(section) {
     if (section === 'history') loadHistory();
     if (section === 'users') loadUsers();
     if (section === 'roles') loadRoles();
+    if (section === 'cam') loadCAMData();
 }
 
 // ─── Layer Status Management ────────────────────────────────────
@@ -2088,6 +2116,16 @@ function populateRiskScoringView(l5) {
     if (loanCard && (loanStruct.term_loan || loan.limits)) {
         loanCard.style.display = '';
 
+        const noteEl = document.getElementById('l5HitlOverrideNote');
+        if (noteEl) {
+            if (loan.hitl_override_note) {
+                noteEl.innerHTML = `<strong>⚖️ Officer Override:</strong> ${loan.hitl_override_note}`;
+                noteEl.style.display = 'block';
+            } else {
+                noteEl.style.display = 'none';
+            }
+        }
+
         // Loan components table
         const loanBody = document.getElementById('l5LoanBody');
         if (loanBody) {
@@ -2113,6 +2151,7 @@ function populateRiskScoringView(l5) {
                 gst_limit: 'GST Revenue Multiplier',
                 collateral_limit: 'Collateral LTV (65%)',
                 mpbf_limit: 'MPBF — Nayak Committee Method II',
+                manual_override_limit: 'Human Officer Override',
             };
             limitsBody.innerHTML = Object.entries(loan.limits).map(([k, v]) => {
                 const isBinding = k.replace('_limit', '').toUpperCase() === binding;
@@ -2386,3 +2425,297 @@ async function generateShapExplanation() {
         }
     }
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// LAYER 6: Decision Override (HITL)
+// ═══════════════════════════════════════════════════════════
+
+function openPendingHitlModal() {
+    if (STATE._pendingHitlDecisionData) {
+        showHitlDecisionModal(STATE._pendingHitlDecisionData);
+    } else {
+        showToast("No pending decision found.");
+    }
+}
+
+function showHitlDecisionModal(data) {
+    const dec = data.decision || {};
+
+    // Set current AI recommendations as default
+    document.getElementById('hitlDecSelect').value = dec.decision || 'APPROVE';
+    document.getElementById('hitlDecAmount').value = dec.sanction_amount_lakhs || '';
+    document.getElementById('hitlDecRate').value = dec.interest_rate || '';
+    document.getElementById('hitlDecReason').value = '';
+
+    // Store original values for risk checking
+    STATE._l6OriginalDecision = dec.decision || 'APPROVE';
+    STATE._l6OriginalAmount = dec.sanction_amount_lakhs || 0;
+
+    // Reset UI state
+    document.getElementById('hitlDecRiskWarning').style.display = 'none';
+    document.getElementById('btnAcceptAi').style.display = 'inline-block';
+    document.getElementById('btnOverrideAi').style.display = 'inline-block';
+    document.getElementById('btnConfirmOverride').style.display = 'none';
+
+    document.getElementById('hitlDecisionModal').style.display = 'flex';
+}
+
+function closeHitlDecisionModal() {
+    document.getElementById('hitlDecisionModal').style.display = 'none';
+}
+
+async function handleHitlOverride() {
+    const reason = document.getElementById('hitlDecReason').value.trim();
+    const newDec = document.getElementById('hitlDecSelect').value;
+    const newAmt = parseFloat(document.getElementById('hitlDecAmount').value);
+
+    if (newDec !== STATE._l6OriginalDecision || Math.abs(newAmt - STATE._l6OriginalAmount) > 0.1) {
+        if (!reason) {
+            showToast('❌ You must provide a reason when overriding the AI decision.');
+            document.getElementById('hitlDecReason').focus();
+            return;
+        }
+    } else {
+        showToast('ℹ You have not made any changes. Use "Accept AI Decision".');
+        return;
+    }
+
+    const appId = STATE._hitlAppId;
+    const btn = document.getElementById('btnOverrideAi');
+    btn.textContent = 'Checking Risks...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`/api/applications/${appId}/layer6_risk_check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                old_decision: STATE._l6OriginalDecision,
+                old_loan_amount: STATE._l6OriginalAmount,
+                decision: newDec,
+                loan_amount: newAmt,
+                reason: reason
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.bullet_points) {
+            const warningUl = document.getElementById('hitlDecRiskBullets');
+            warningUl.innerHTML = data.bullet_points.map(b => `<li style="margin-bottom:0.4rem;">${b.replace(/^•\s*/, '')}</li>`).join('');
+
+            // Show warnings and morph buttons
+            document.getElementById('hitlDecRiskWarning').style.display = 'block';
+            document.getElementById('btnOverrideAi').style.display = 'none';
+            document.getElementById('btnAcceptAi').style.display = 'inline-block';
+            document.getElementById('btnConfirmOverride').style.display = 'inline-block';
+
+            showToast('⚠ Please review the LLM risk assessment before confirming.');
+        } else {
+            showToast('❌ Failed to assess risks.');
+        }
+
+    } catch (e) {
+        showToast('❌ Network error checking risks.');
+    } finally {
+        btn.textContent = 'Override Decision';
+        btn.disabled = false;
+    }
+}
+
+async function submitHitlDecision(isOverride) {
+    const appId = STATE._hitlAppId;
+    if (!appId) return;
+
+    let payload = {};
+    if (!isOverride) {
+        // Accept AI
+        payload = {
+            decision: STATE._l6OriginalDecision,
+            loan_amount: STATE._l6OriginalAmount,
+            interest_rate: document.getElementById('hitlDecRate').value,
+            reason: 'Accepted AI decision without modifications.'
+        };
+    } else {
+        // Confirm Risky Override
+        const reason = document.getElementById('hitlDecReason').value.trim();
+        if (!reason) { showToast('❌ Reason required'); return; }
+
+        payload = {
+            decision: document.getElementById('hitlDecSelect').value,
+            loan_amount: document.getElementById('hitlDecAmount').value,
+            interest_rate: document.getElementById('hitlDecRate').value,
+            reason: reason
+        };
+    }
+
+    try {
+        const res = await fetch(`/api/applications/${appId}/layer6_hitl_decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (data.status) {
+            closeHitlDecisionModal();
+            showToast('✅ Layer 6 decision submitted! Continuing to CAM Generation.');
+        } else {
+            showToast('❌ ' + data.error);
+        }
+    } catch (e) {
+        showToast('❌ Failed to submit decision.');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// LAYER 7: CAM Report Rendering
+// ═══════════════════════════════════════════════════════════
+
+function populateCAMView(camData) {
+    if (!camData) return;
+
+    // CAM Hash
+    const hashEl = document.getElementById('camHash');
+    if (hashEl) hashEl.textContent = camData.cam_hash ? camData.cam_hash.substring(0, 24) + '…' : '—';
+
+    // Sections
+    const secEl = document.getElementById('camSections');
+    if (secEl) secEl.textContent = camData.sections || '—';
+
+    // Timestamp
+    const tsEl = document.getElementById('camTimestamp');
+    if (tsEl) tsEl.textContent = camData.timestamp ? new Date(camData.timestamp).toLocaleString('en-IN') : '—';
+
+    // Digital Signature
+    const sig = camData.digital_signature;
+    if (sig) {
+        document.getElementById('camSignatureUnsigned').style.display = 'none';
+        document.getElementById('camSignatureSigned').style.display = '';
+        document.getElementById('sigOfficerName').textContent = sig.officer_name || '—';
+        document.getElementById('sigOfficerRole').textContent = sig.officer_role || '—';
+        document.getElementById('sigTimestamp').textContent = sig.timestamp ? new Date(sig.timestamp).toLocaleString('en-IN') : '—';
+        document.getElementById('sigHash').textContent = sig.signature_hash ? sig.signature_hash.substring(0, 32) + '…' : '—';
+    }
+
+    // Audit grid
+    const audit = camData.audit || {};
+    const auditGrid = document.getElementById('camAuditGrid');
+    if (auditGrid && Object.keys(audit).length) {
+        const decColors = { APPROVE: '#10b981', CONDITIONAL: '#f59e0b', REJECT: '#ef4444' };
+        const items = [
+            ['AI Credit Score', audit.ai_score || '—', decColors[audit.final_decision] || '#6b7280'],
+            ['Risk Band', audit.risk_band || '—', decColors[audit.final_decision] || '#6b7280'],
+            ['Prob. of Default', audit.probability_of_default ? `${(audit.probability_of_default * 100).toFixed(1)}%` : '—', ''],
+            ['Final Decision', audit.final_decision || '—', decColors[audit.final_decision] || '#6b7280'],
+            ['Interest Rate', audit.interest_rate ? `${audit.interest_rate}%` : '—', ''],
+            ['Sanction Amount', audit.sanction_amount_lakhs ? `₹${audit.sanction_amount_lakhs}L` : '—', ''],
+            ['RED Flags', audit.forensics_summary?.red_flags ?? 0, '#ef4444'],
+            ['AMBER Flags', audit.forensics_summary?.amber_flags ?? 0, '#f59e0b'],
+            ['Total Penalty', audit.forensics_summary?.total_penalty ?? 0, ''],
+            ['Feature Count', audit.feature_count || 25, ''],
+            ['Model Version', audit.model_version || 'v4.3', '#6366f1'],
+            ['Schema', audit.schema_version || '1.0.0', ''],
+        ];
+        auditGrid.innerHTML = items.map(([label, val, color]) => `
+            <div style="padding:0.6rem;background:var(--surface-card);border-radius:8px;text-align:center;">
+                <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;">${label}</div>
+                <div style="font-size:1.1rem;font-weight:700;${color ? `color:${color};` : ''}">${val}</div>
+            </div>
+        `).join('');
+    }
+
+    // Five Cs Rating for CAM
+    const fiveCs = audit.five_cs || {};
+    const camFiveCsGrid = document.getElementById('camFiveCsGrid');
+    if (camFiveCsGrid && Object.keys(fiveCs).length) {
+        const cColors = { POSITIVE: '#10b981', MODERATE: '#f59e0b', 'MODERATE — POSITIVE': '#6366f1', NEGATIVE: '#ef4444' };
+        const cLabels = { character: '👤 Character', capacity: '💪 Capacity', capital: '🏦 Capital', collateral: '🏠 Collateral', conditions: '🌐 Conditions' };
+        camFiveCsGrid.innerHTML = Object.entries(cLabels).map(([key, label]) => {
+            const c = fiveCs[key] || {};
+            const rating = c.rating || 'NOT ASSESSED';
+            const color = cColors[rating] || '#6b7280';
+            return `<div style="padding:0.75rem;background:var(--surface-card);border-radius:10px;border-top:3px solid ${color};text-align:center;">
+                <div style="font-size:0.75rem;color:var(--text-secondary);">${label}</div>
+                <div style="font-size:0.9rem;font-weight:700;color:${color};margin-top:0.25rem;">${rating}</div>
+            </div>`;
+        }).join('');
+    }
+
+    if (window.lucide) lucide.createIcons();
+}
+
+
+// ─── CAM Download ────────────────────────────────────────────────────────────
+function downloadCAM(format) {
+    const appId = STATE.currentApp?.id;
+    if (!appId) { showToast('❌ No active application'); return; }
+
+    if (format === 'json') {
+        // Open in new tab as JSON
+        window.open(`/api/applications/${appId}/download_cam/json`, '_blank');
+    } else {
+        // Direct download
+        window.location.href = `/api/applications/${appId}/download_cam/${format}`;
+    }
+    showToast(`📥 Downloading CAM as ${format.toUpperCase()}...`);
+}
+
+
+// ─── Digital Signature ───────────────────────────────────────────────────────
+async function applyDigitalSignature() {
+    const appId = STATE.currentApp?.id;
+    if (!appId) { showToast('❌ No active application'); return; }
+
+    if (!confirm('Apply your digital signature to this CAM report?\n\nThis action is logged in the audit trail and creates a tamper-evident hash.')) return;
+
+    const btn = document.getElementById('btnDigitalSign');
+    if (btn) { btn.disabled = true; btn.textContent = 'Signing...'; }
+
+    try {
+        const res = await fetch(`/api/applications/${appId}/digital_signature`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (data.error) {
+            showToast('❌ ' + data.error);
+            return;
+        }
+
+        // Update UI
+        document.getElementById('camSignatureUnsigned').style.display = 'none';
+        document.getElementById('camSignatureSigned').style.display = '';
+        document.getElementById('sigOfficerName').textContent = data.officer_name || '—';
+        document.getElementById('sigOfficerRole').textContent = STATE.user?.role || '—';
+        document.getElementById('sigTimestamp').textContent = data.timestamp ? new Date(data.timestamp).toLocaleString('en-IN') : '—';
+        document.getElementById('sigHash').textContent = data.signature_hash ? data.signature_hash.substring(0, 32) + '…' : '—';
+
+        showToast('✅ Digital signature applied successfully!');
+    } catch (e) {
+        showToast('❌ Failed to apply digital signature');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="pen-tool" style="width:16px;height:16px;"></i> Apply Digital Signature'; }
+        if (window.lucide) lucide.createIcons();
+    }
+}
+
+
+// ─── Load CAM data from API when navigating to CAM tab ──────────────────────
+async function loadCAMData() {
+    const appId = STATE.currentApp?.id;
+    if (!appId) return;
+
+    try {
+        const res = await fetch(`/api/applications/${appId}/cam_data`);
+        if (res.ok) {
+            const data = await res.json();
+            populateCAMView(data);
+        }
+    } catch (e) {
+        console.log('CAM data not yet available:', e.message);
+    }
+}
+

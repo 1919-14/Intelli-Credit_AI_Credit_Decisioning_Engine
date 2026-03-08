@@ -25,6 +25,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 import threading
 _layer4_events: dict = {}   # app_id → {"e1": Event, "e2": Event, "e3": Event, "d1": {}, "d2": {}, "d3": {}}
 _layer5_events: dict = {}   # app_id → {"e1": Event, "d1": {}}
+_layer6_events: dict = {}   # app_id → {"e1": Event, "d1": {}}
 
 
 ALLOWED_EXTENSIONS = {'pdf', 'csv', 'xlsx', 'xls'}
@@ -1524,12 +1525,160 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
             "status": "error", "error": str(e)
         }, room=f'app_{app_id}')
 
-    # ─── Layer 6: CAM Generation (placeholder) ───────────────────────────
-    socketio.emit('layer_progress', {"layer": 6, "name": "CAM Generation", "status": "processing", "pct": 50},
+    # ─── Layer 6: HITL Decision Override ──────────────────────────────
+    socketio.emit('layer_progress', {"layer": 6, "name": "Decision Override", "status": "processing", "pct": 10},
                   room=f'app_{app_id}')
-    time.sleep(1.5)
-    socketio.emit('layer_complete', {"layer": 6, "name": "CAM Generation", "status": "done"},
+    
+    _layer6_events[app_id] = {"e1": threading.Event(), "d1": {}}
+    socketio.emit('hitl_review_needed', {
+        "app_id": app_id, 
+        "layer": "6_decision",
+        "title": "Layer 6: Final Decision Review",
+        "message": "Review and optionally override the AI's final credit decision.",
+        "decision": layer5_result.get("decision_summary", {})
+    }, room=f'app_{app_id}')
+    print(f"Waiting for Layer 6 HITL Decision Review on app {app_id}...")
+
+    # Wait up to 24h
+    _layer6_events[app_id]["e1"].wait(timeout=86400)
+    d1 = _layer6_events[app_id].get("d1", {})
+    _layer6_events.pop(app_id, None)
+
+    # Update layer5_result with custom override if provided
+    if d1.get('approved'):
+        print(f"Layer 6 HITL approved overrides: {d1}")
+        overrides = d1.get("overrides", {})
+        if overrides:
+            if "decision" in overrides: layer5_result["decision_summary"]["decision"] = overrides["decision"]
+            
+            # Did the amount or rate change?
+            amount_changed = "loan_amount" in overrides and str(overrides["loan_amount"]) != str(layer5_result["decision_summary"].get("sanction_amount_lakhs"))
+            rate_changed = "interest_rate" in overrides and str(overrides["interest_rate"]) != str(layer5_result["decision_summary"].get("interest_rate"))
+            
+            if "loan_amount" in overrides: layer5_result["decision_summary"]["sanction_amount_lakhs"] = float(overrides["loan_amount"])
+            if "interest_rate" in overrides: layer5_result["decision_summary"]["interest_rate"] = float(overrides["interest_rate"])
+            layer5_result["decision_summary"]["override_reason"] = overrides.get("reason", "Accepted AI decision")
+            
+            # Recalculate metrics if needed
+            if amount_changed or rate_changed:
+                try:
+                    from layer5.step10_loan_structure import compute_loan_structure
+                    l2_parsed = json.loads(output_json) if isinstance(output_json, str) else output_json
+                    l2 = l2_parsed.get('extracted', {}).get('financial_data', {}) or l2_parsed
+                    features = layer5_result.get("validation", {}).get("validated_features", {})
+                    conditions = layer5_result.get("decision_summary", {}).get("conditions", [])
+                    new_amt = float(layer5_result["decision_summary"]["sanction_amount_lakhs"])
+                    new_rate = float(layer5_result["decision_summary"]["interest_rate"])
+                    
+                    recalc = compute_loan_structure(
+                        features, new_rate, conditions, l2, new_amt
+                    )
+                    
+                    # Force the structural splits to match the exact overridden amount
+                    term_amount = round(new_amt * 0.60, 2)
+                    wc_amount = round(new_amt * 0.40, 2)
+                    tenure_months = recalc["loan_structure"]["term_loan"]["tenure_months"]
+                    rate_monthly = new_rate / 100 / 12
+                    
+                    if rate_monthly > 0:
+                        emi = term_amount * rate_monthly * (1 + rate_monthly)**tenure_months / ((1 + rate_monthly)**tenure_months - 1)
+                    else: emi = term_amount / tenure_months
+                    
+                    recalc["approved_amount_lakhs"] = new_amt
+                    recalc["loan_structure"]["total_sanctioned_lakhs"] = new_amt
+                    recalc["loan_structure"]["term_loan"]["amount_lakhs"] = term_amount
+                    recalc["loan_structure"]["term_loan"]["rate"] = new_rate
+                    recalc["loan_structure"]["term_loan"]["emi_lakhs"] = round(emi, 2)
+                    recalc["loan_structure"]["working_capital"]["amount_lakhs"] = wc_amount
+                    recalc["loan_structure"]["working_capital"]["rate"] = round(new_rate + 0.75, 2)
+                    
+                    recalc["limits"]["manual_override_limit"] = new_amt
+                    recalc["binding_constraint"] = "MANUAL_OVERRIDE"
+                    
+                    recalc["hitl_override_note"] = f"Manual Override Matrix: Computed based on {new_amt}L @ {new_rate}%"
+                    layer5_result["loan_structure"] = recalc
+                except Exception as e:
+                    print(f"Failed to recalculate loan metrics: {e}")
+            
+            # Persist custom changes back to DB (Layer 5 data updated)
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("UPDATE applications SET layer5_output=%s WHERE id=%s", (json.dumps(layer5_result), app_id))
+            conn.commit()
+            cur.close()
+            conn.close()
+
+    socketio.emit('layer_complete', {"layer": 6, "name": "Decision Override", "status": "done"}, room=f'app_{app_id}')
+
+
+    # ─── Layer 7: CAM Report Generation (formerly Layer 6) ─────────────
+    socketio.emit('layer_progress', {"layer": 7, "name": "CAM Report Generation", "status": "processing", "pct": 10},
                   room=f'app_{app_id}')
+
+    cam_result = {}
+    try:
+        from layer7.cam_generator import generate_cam_report, generate_audit_json
+
+        socketio.emit('layer_progress', {"layer": 7, "name": "CAM Report Generation", "status": "processing", "pct": 30,
+                      "detail": "Compiling 13-section RBI-compliant CAM..."}, room=f'app_{app_id}')
+
+        # Gather all layer data
+        app_data = {"case_id": case_id, "company_name": company_name, "app_id": app_id}
+        l2_parsed = json.loads(output_json) if isinstance(output_json, str) else output_json
+        l3_parsed = json.loads(layer3_json) if 'layer3_json' in dir() and layer3_json else {}
+        l4_parsed = layer4_result if 'layer4_result' in dir() else {}
+        l5_parsed = layer5_result if 'layer5_result' in dir() else {}
+
+        cam_dir = os.path.join(app.config['UPLOAD_FOLDER'], f"cam_{app_id}")
+        cam_result = generate_cam_report(app_data, l2_parsed, l3_parsed, l4_parsed, l5_parsed, cam_dir)
+
+        socketio.emit('layer_progress', {"layer": 7, "name": "CAM Report Generation", "status": "processing", "pct": 70,
+                      "detail": "Generating audit JSON..."}, room=f'app_{app_id}')
+
+        audit_json = generate_audit_json(app_data, l2_parsed, l3_parsed, l4_parsed, l5_parsed)
+
+        socketio.emit('layer_progress', {"layer": 7, "name": "CAM Report Generation", "status": "processing", "pct": 90,
+                      "detail": "Saving..."}, room=f'app_{app_id}')
+
+        # Save to DB
+        cam_meta = json.dumps({
+            "cam_hash": cam_result.get("cam_hash", ""),
+            "docx_path": cam_result.get("path", ""),
+            "sections": cam_result.get("sections", 13),
+            "timestamp": cam_result.get("timestamp", ""),
+            "audit": audit_json,
+        }, default=str)
+
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute("ALTER TABLE applications ADD COLUMN layer7_cam LONGTEXT")
+            conn.commit()
+        except:
+            conn.rollback()
+        cur.execute("UPDATE applications SET layer7_cam=%s, current_layer=7 WHERE id=%s",
+                    (cam_meta, app_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        socketio.emit('layer_complete', {
+            "layer": 7,
+            "name": "CAM Report Generation",
+            "status": "done",
+            "cam_hash": cam_result.get("cam_hash", ""),
+            "sections": cam_result.get("sections", 13),
+            "audit": audit_json,
+        }, room=f'app_{app_id}')
+        print(f"Layer 7 CAM complete | Hash: {cam_result.get('cam_hash', '')[:16]}...")
+
+    except Exception as e:
+        print(f"Layer 7 CAM error: {e}")
+        import traceback; traceback.print_exc()
+        socketio.emit('layer_complete', {
+            "layer": 7, "name": "CAM Report Generation",
+            "status": "error", "error": str(e)
+        }, room=f'app_{app_id}')
 
     # Mark application as completed
     conn = get_db()
@@ -1654,6 +1803,233 @@ def shap_explain(app_id):
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Failed to generate explanation: {str(e)}"}), 500
+
+
+
+# ─── Layer 6 HITL Decision API ───────────────────────────────────────────────
+@app.route('/api/applications/<int:app_id>/layer6_hitl_decision', methods=['POST'])
+@login_required
+def layer6_hitl_decision(app_id):
+    """Handle user's manual override of the AI decision."""
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    decision = data.get('decision')
+    if not decision or decision not in ['APPROVE', 'REJECT', 'CONDITIONAL']:
+        return jsonify({"error": "Invalid decision"}), 400
+
+    if app_id in _layer6_events:
+        _layer6_events[app_id]["d1"] = {
+            "approved": True,
+            "overrides": {
+                "decision": decision,
+                "loan_amount": data.get('loan_amount'),
+                "interest_rate": data.get('interest_rate'),
+                "reason": data.get('reason'),
+                "conditions": data.get('conditions', [])
+            }
+        }
+        _layer6_events[app_id]["e1"].set()
+        return jsonify({"status": "Decision override submitted"})
+    else:
+        return jsonify({"error": "Session expired or layer not active"}), 400
+
+@app.route('/api/applications/<int:app_id>/layer6_risk_check', methods=['POST'])
+@login_required
+def layer6_risk_check(app_id):
+    """Call Groq LLM to evaluate the user's override and provide risk bullet points."""
+    data = request.json
+    if not data: return jsonify({"error": "Invalid request"}), 400
+
+    new_decision = data.get('decision')
+    reason = data.get('reason', '')
+    loan_amount = data.get('loan_amount')
+    old_decision = data.get('old_decision')
+    old_loan_amount = data.get('old_loan_amount')
+
+    if not reason:
+        return jsonify({"bullet_points": ["No reason provided for the override. This is highly irregular and adds compliance risk."]})
+
+    prompt = f"""You are a Chief Risk Officer reviewing a credit analyst's manual override of an AI credit model.
+Original AI Decision: {old_decision} (Amount: {old_loan_amount}L)
+New Human Decision: {new_decision} (Amount: {loan_amount}L)
+Analyst's Reason for Override: "{reason}"
+
+Evaluate the risks of this override. Provide EXACTLY 3-4 bullet points in plain text (start each with a bullet character •). Do not use markdown. Make them punchy, specific warnings about what could go wrong if this override is approved. Focus on credit risk, compliance, and alignment.
+"""
+    try:
+        from groq import Groq
+        client = Groq(
+            api_key=os.getenv("API_KEY")
+        )
+        response = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {"role": "system", "content": "You are a Chief Risk Officer assessing override risks."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300
+        )
+        text = response.choices[0].message.content.strip()
+        bullets = [line.strip() for line in text.split('\n') if line.strip() and line.strip().startswith('•')]
+        if not bullets:
+            bullets = [f"• Risk 1: {text}"]
+            
+        return jsonify({"bullet_points": bullets})
+    except Exception as e:
+        print(f"LLM Risk Check Error: {e}")
+        return jsonify({"bullet_points": [
+            "• Unable to reach Risk AI for deeper analysis.",
+            "• Proceeding with an un-validated override carries elevated compliance risk.",
+            "• Ensure physical documentation fully supports your stated reason."
+        ]})
+
+
+# ─── CAM Download API ────────────────────────────────────────────────────────
+@app.route('/api/applications/<int:app_id>/download_cam/<fmt>')
+@login_required
+def download_cam(app_id, fmt):
+    """Download CAM in DOCX or PDF format."""
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT layer7_cam, case_id FROM applications WHERE id=%s", (app_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row or not row.get('layer7_cam'):
+        return jsonify({"error": "CAM not generated yet. Run the pipeline first."}), 404
+
+    try:
+        cam_meta = json.loads(row['layer7_cam']) if isinstance(row['layer7_cam'], str) else row['layer7_cam']
+    except:
+        return jsonify({"error": "Failed to parse CAM metadata."}), 500
+
+    docx_path = cam_meta.get('docx_path', '')
+    if not docx_path or not os.path.exists(docx_path):
+        return jsonify({"error": "CAM file not found on disk."}), 404
+
+    case_id = row.get('case_id', 'UNKNOWN')
+
+    if fmt == 'docx':
+        from flask import send_file
+        return send_file(docx_path, as_attachment=True,
+                        download_name=f"CAM_{case_id}.docx",
+                        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    elif fmt == 'pdf':
+        from flask import send_file
+        pdf_path = docx_path.replace('.docx', '.pdf')
+        if not os.path.exists(pdf_path):
+            from layer7.cam_generator import convert_docx_to_pdf
+            success = convert_docx_to_pdf(docx_path, pdf_path)
+            if not success or not os.path.exists(pdf_path):
+                return jsonify({"error": "PDF conversion failed. Please download DOCX instead."}), 500
+        return send_file(pdf_path, as_attachment=True,
+                        download_name=f"CAM_{case_id}.pdf",
+                        mimetype='application/pdf')
+    elif fmt == 'json':
+        audit = cam_meta.get('audit', {})
+        return jsonify(audit)
+    else:
+        return jsonify({"error": f"Unsupported format: {fmt}"}), 400
+
+
+# ─── Digital Signature API ───────────────────────────────────────────────────
+@app.route('/api/applications/<int:app_id>/digital_signature', methods=['POST'])
+@login_required
+def apply_digital_signature(app_id):
+    """Apply digital signature to the CAM report."""
+    data = request.get_json() or {}
+    officer_name = data.get('officer_name', session.get('full_name', 'Unknown'))
+    officer_id = data.get('officer_id', session.get('user_id', 0))
+    officer_role = data.get('officer_role', session.get('role', 'ANALYST'))
+
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT layer7_cam, case_id, company_name FROM applications WHERE id=%s", (app_id,))
+    row = cur.fetchone()
+
+    if not row or not row.get('layer7_cam'):
+        cur.close()
+        conn.close()
+        return jsonify({"error": "CAM not generated yet."}), 404
+
+    try:
+        cam_meta = json.loads(row['layer7_cam']) if isinstance(row['layer7_cam'], str) else row['layer7_cam']
+    except:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Failed to parse CAM."}), 500
+
+    import hashlib
+    sig_data = f"{app_id}:{row['case_id']}:{officer_id}:{officer_name}:{datetime.now().isoformat()}"
+    signature_hash = hashlib.sha256(sig_data.encode()).hexdigest()
+
+    cam_meta['digital_signature'] = {
+        'officer_name': officer_name,
+        'officer_id': officer_id,
+        'officer_role': officer_role,
+        'timestamp': datetime.now().isoformat(),
+        'signature_hash': signature_hash,
+        'cam_hash': cam_meta.get('cam_hash', ''),
+    }
+
+    cur.execute("UPDATE applications SET layer7_cam=%s WHERE id=%s",
+                (json.dumps(cam_meta, default=str), app_id))
+    conn.commit()
+
+    # Audit log
+    try:
+        cur.execute("""INSERT INTO audit_logs (actor_id, action, target_type, target_id, details, timestamp)
+                       VALUES (%s, 'DIGITAL_SIGNATURE', 'application', %s, %s, NOW())""",
+                    (officer_id, app_id, json.dumps({
+                        'signature_hash': signature_hash,
+                        'case_id': row['case_id'],
+                        'company': row['company_name'],
+                    })))
+        conn.commit()
+    except:
+        pass
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "success": True,
+        "signature_hash": signature_hash,
+        "officer_name": officer_name,
+        "timestamp": cam_meta['digital_signature']['timestamp'],
+    })
+
+
+# ─── CAM Data API (for UI rendering) ────────────────────────────────────────
+@app.route('/api/applications/<int:app_id>/cam_data')
+@login_required
+def get_cam_data(app_id):
+    """Return CAM metadata for UI rendering."""
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT layer7_cam, case_id, company_name FROM applications WHERE id=%s", (app_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row or not row.get('layer7_cam'):
+        return jsonify({"error": "CAM not generated yet."}), 404
+
+    try:
+        cam_meta = json.loads(row['layer7_cam']) if isinstance(row['layer7_cam'], str) else row['layer7_cam']
+        return jsonify({
+            "cam_hash": cam_meta.get('cam_hash', ''),
+            "sections": cam_meta.get('sections', 0),
+            "timestamp": cam_meta.get('timestamp', ''),
+            "audit": cam_meta.get('audit', {}),
+            "digital_signature": cam_meta.get('digital_signature', None),
+        })
+    except:
+        return jsonify({"error": "Failed to parse CAM data."}), 500
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
