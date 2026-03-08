@@ -302,7 +302,7 @@ Required Content:
             messages=[{"role": "user", "content": prompt}],
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             temperature=0.3, 
-            max_tokens=300
+            max_tokens=800
         )
         decision_result["llm_decision_summary"] = resp.choices[0].message.content.strip()
     except Exception as e:

@@ -137,6 +137,134 @@ def init_database():
         )
     """)
 
+    # ─── Layer 8: Governance Tables ──────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS model_inventory (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            model_id VARCHAR(50) UNIQUE NOT NULL,
+            model_name VARCHAR(200) NOT NULL,
+            model_type VARCHAR(100),
+            deployment_date DATE,
+            developer_team VARCHAR(200),
+            model_owner VARCHAR(200),
+            rmcb_approval_date DATE,
+            rmcb_resolution_no VARCHAR(50),
+            last_validation_date DATE,
+            next_validation_due DATE,
+            model_risk_rating VARCHAR(10) DEFAULT 'HIGH',
+            is_third_party BOOLEAN DEFAULT FALSE,
+            status VARCHAR(20) DEFAULT 'LIVE',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS model_change_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            model_id VARCHAR(50) NOT NULL,
+            change_type VARCHAR(50) NOT NULL,
+            description TEXT,
+            impact_assessment TEXT,
+            requested_by VARCHAR(100),
+            approved_by VARCHAR(100),
+            approved_at DATETIME DEFAULT NULL,
+            status VARCHAR(20) DEFAULT 'PENDING',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS performance_metrics (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            period VARCHAR(20),
+            sample_size INT DEFAULT 0,
+            auc_roc FLOAT,
+            ks_statistic FLOAT,
+            gini_coefficient FLOAT,
+            f1_score FLOAT,
+            precision_val FLOAT,
+            recall_val FLOAT,
+            brier_score FLOAT,
+            computed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS imv_reports (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            model_id VARCHAR(50),
+            validation_date DATETIME,
+            validator VARCHAR(200),
+            overall_status VARCHAR(20),
+            report_json LONGTEXT,
+            next_validation_due DATE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS drift_psi_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            report_date DATETIME,
+            overall_status VARCHAR(10),
+            red_count INT DEFAULT 0,
+            amber_count INT DEFAULT 0,
+            green_count INT DEFAULT 0,
+            report_json LONGTEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bias_fairness_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            period VARCHAR(20),
+            report_type VARCHAR(30),
+            overall_status VARCHAR(10),
+            report_json LONGTEXT,
+            computed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sma_monitoring (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            case_id VARCHAR(50) NOT NULL,
+            dpd INT DEFAULT 0,
+            sma_classification VARCHAR(20) DEFAULT 'REGULAR',
+            severity VARCHAR(20) DEFAULT 'NORMAL',
+            outstanding_lakhs FLOAT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX (case_id),
+            INDEX (sma_classification)
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crilc_submissions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            case_id VARCHAR(50) NOT NULL,
+            borrower_name VARCHAR(200),
+            outstanding_cr FLOAT DEFAULT 0,
+            sma_status VARCHAR(20),
+            quarter VARCHAR(10),
+            submission_status VARCHAR(20) DEFAULT 'PENDING',
+            submitted_at DATETIME DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS retraining_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            trigger_type VARCHAR(50),
+            status VARCHAR(20) DEFAULT 'INITIATED',
+            details_json LONGTEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # ─── Seed Default Roles ──────────────────────────────────────────────────
     default_roles = [
         ("SUPER_ADMIN", json.dumps(["*"]), json.dumps(["CREDIT_ANALYST", "VIEWER"]), 1, "Full System Control"),
@@ -160,6 +288,16 @@ def init_database():
     conn.commit()
     cur.close()
     conn.close()
+
+    # ─── Seed Layer 8 Model Inventory ────────────────────────────────────────
+    try:
+        from layer8.block_a_model_registry import seed_model_inventory
+        conn2 = get_db()
+        seed_model_inventory(conn2)
+        conn2.close()
+    except Exception as e:
+        print(f"  Layer 8 model inventory seed: {e}")
+
     print("✅ Database initialized successfully.")
 
 
@@ -2032,9 +2170,302 @@ def get_cam_data(app_id):
         return jsonify({"error": "Failed to parse CAM data."}), 500
 
 
+# ─── Layer 8: Governance, Monitoring & Compliance APIs ───────────────────────
+
+@app.route('/api/layer8/model-inventory')
+@login_required
+def layer8_model_inventory():
+    """Return current model inventory."""
+    try:
+        from layer8.block_a_model_registry import get_model_inventory
+        conn = get_db()
+        inventory = get_model_inventory(conn)
+        conn.close()
+        return jsonify(inventory)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/model-inventory/update', methods=['POST'])
+@login_required
+def layer8_update_model():
+    """Update model status/metadata."""
+    try:
+        from layer8.block_a_model_registry import update_model_status
+        data = request.json
+        conn = get_db()
+        ok = update_model_status(conn, data.get("model_id", "XGB_CREDIT_V4.3"),
+                                  data.get("status", "LIVE"),
+                                  session.get("username", "system"))
+        conn.close()
+        return jsonify({"status": "ok", "updated": ok})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/change-control', methods=['GET', 'POST'])
+@login_required
+def layer8_change_control():
+    """Log or list change requests."""
+    try:
+        from layer8.block_a_model_registry import log_change_request, get_change_log
+        conn = get_db()
+        if request.method == 'POST':
+            data = request.json
+            data["requested_by"] = session.get("username", "system")
+            change_id = log_change_request(conn, data)
+            conn.close()
+            log_audit(session['user_id'], 'LAYER8_CHANGE_REQUEST', data.get("model_id"))
+            return jsonify({"status": "ok", "change_id": change_id})
+        else:
+            changes = get_change_log(conn, request.args.get("model_id"))
+            conn.close()
+            return jsonify(changes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/performance-metrics')
+@login_required
+def layer8_performance_metrics():
+    """Compute and return model performance metrics."""
+    try:
+        from layer8.block_b_performance import compute_performance_metrics, get_performance_history
+        conn = get_db()
+        history = get_performance_history(conn, limit=12)
+        if not history:
+            metrics = compute_performance_metrics([])
+        else:
+            metrics = history[0]
+        conn.close()
+        return jsonify({"current": metrics, "history": history})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/score-distribution')
+@login_required
+def layer8_score_distribution():
+    """Return score distribution stats."""
+    try:
+        from layer8.block_b_performance import compute_score_distribution
+        dist = compute_score_distribution([])
+        return jsonify(dist)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/run-imv', methods=['POST'])
+@login_required
+def layer8_run_imv():
+    """Trigger IMV run."""
+    try:
+        from layer8.block_c_imv import run_imv_check, save_imv_report
+        conn = get_db()
+        report = run_imv_check(conn)
+        report_id = save_imv_report(conn, report)
+        conn.close()
+        log_audit(session['user_id'], 'LAYER8_IMV_RUN', report.get("model_id"))
+        return jsonify({"status": "ok", "report_id": report_id, "report": report})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/imv-reports')
+@login_required
+def layer8_imv_reports():
+    """List IMV reports."""
+    try:
+        from layer8.block_c_imv import get_imv_reports
+        conn = get_db()
+        reports = get_imv_reports(conn)
+        conn.close()
+        return jsonify(reports)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/drift-report')
+@login_required
+def layer8_drift_report():
+    """Run/return PSI + concept drift report."""
+    try:
+        from layer8.block_d_drift import get_drift_history, get_demo_drift_report
+        conn = get_db()
+        history = get_drift_history(conn, limit=1)
+        conn.close()
+        if history and history[0].get("report_json"):
+            return jsonify(history[0]["report_json"])
+        return jsonify(get_demo_drift_report())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/fairness-report')
+@login_required
+def layer8_fairness_report():
+    """Return sector + MSME fairness report."""
+    try:
+        from layer8.block_e_fairness import sector_fairness_report, msme_size_fairness
+        sector = sector_fairness_report([])
+        msme = msme_size_fairness([])
+        return jsonify({"sector_fairness": sector, "msme_fairness": msme})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/applications/<case_id>/explanation')
+@login_required
+def layer8_explanation(case_id):
+    """DPDP Act 2023 right-to-explanation endpoint."""
+    try:
+        from layer8.block_e_fairness import generate_explanation
+        conn = get_db()
+        explanation = generate_explanation(case_id, conn)
+        conn.close()
+        if explanation:
+            log_audit(session['user_id'], 'DPDP_EXPLANATION_SERVED', case_id)
+            return jsonify(explanation)
+        return jsonify({"error": "No explanation available for this case"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/sma-dashboard')
+@login_required
+def layer8_sma_dashboard():
+    """Return SMA counts + early warnings."""
+    try:
+        from layer8.block_f_npa import get_sma_dashboard, get_demo_sma_dashboard
+        conn = get_db()
+        data = get_sma_dashboard(conn)
+        conn.close()
+        if data.get("total_monitored", 0) == 0:
+            data = get_demo_sma_dashboard()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/sma-update', methods=['POST'])
+@login_required
+def layer8_sma_update():
+    """Update DPD for a sanctioned loan."""
+    try:
+        from layer8.block_f_npa import update_sma_status
+        data = request.json
+        conn = get_db()
+        result = update_sma_status(conn, data["case_id"], data.get("dpd", 0),
+                                    data.get("outstanding_lakhs", 0))
+        conn.close()
+        return jsonify({"status": "ok", "classification": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/crilc-submissions')
+@login_required
+def layer8_crilc_submissions():
+    """List CRILC submissions."""
+    try:
+        from layer8.block_f_npa import get_crilc_submissions, get_demo_crilc
+        conn = get_db()
+        subs = get_crilc_submissions(conn, request.args.get("quarter"))
+        conn.close()
+        if not subs:
+            subs = get_demo_crilc()
+        return jsonify(subs)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/retraining-status')
+@login_required
+def layer8_retraining_status():
+    """Get retraining status + history."""
+    try:
+        from layer8.block_h_retrain import get_retraining_status, get_demo_retraining_status
+        conn = get_db()
+        data = get_retraining_status(conn)
+        conn.close()
+        if not data.get("history"):
+            data = get_demo_retraining_status()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/trigger-retraining', methods=['POST'])
+@login_required
+def layer8_trigger_retraining():
+    """Manually trigger retraining event."""
+    try:
+        from layer8.block_h_retrain import log_retrain_event
+        data = request.json or {}
+        conn = get_db()
+        rid = log_retrain_event(conn, data.get("trigger", "MANUAL"),
+                                 "INITIATED", data.get("details", {}))
+        conn.close()
+        log_audit(session['user_id'], 'LAYER8_RETRAIN_TRIGGERED', str(rid))
+        return jsonify({"status": "ok", "retrain_id": rid})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/quarterly-report')
+@login_required
+def layer8_quarterly_report():
+    """Generate quarterly RBI validation report."""
+    try:
+        from layer8.block_i_report import generate_quarterly_report
+        conn = get_db()
+        report = generate_quarterly_report(conn)
+        conn.close()
+        return jsonify(report)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/dashboard-data')
+@login_required
+def layer8_dashboard_data():
+    """Aggregated data for all 6 governance panels."""
+    try:
+        from layer8.block_j_dashboard import get_dashboard_data
+        conn = get_db()
+        data = get_dashboard_data(conn)
+        conn.close()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/model-documentation')
+@login_required
+def layer8_model_documentation():
+    """Return model documentation package per RBI requirements."""
+    try:
+        from layer8.block_g_archive import get_model_documentation
+        return jsonify(get_model_documentation())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/retention-policy')
+@login_required
+def layer8_retention_policy():
+    """Return DPDP data retention policy."""
+    try:
+        from layer8.block_g_archive import get_retention_policy
+        return jsonify(get_retention_policy())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_database()
     print("🚀 Intelli-Credit Engine starting on http://localhost:5000")
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+

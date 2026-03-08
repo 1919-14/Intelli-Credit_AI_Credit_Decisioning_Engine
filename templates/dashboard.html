@@ -75,12 +75,6 @@
                 <span class="nav-label">CAM Report</span>
                 <span class="layer-status" id="layerStatus6"></span>
             </a>
-            <a class="nav-item layer-item disabled" data-section="decision" data-layer="7"
-                onclick="showSection('decision')">
-                <span class="nav-icon"><i data-lucide="check-circle"></i></span>
-                <span class="nav-label">Decision Engine</span>
-                <span class="layer-status" id="layerStatus7"></span>
-            </a>
 
             <div class="nav-divider"></div>
 
@@ -95,6 +89,10 @@
             <a class="nav-item" data-section="roles" onclick="showSection('roles')" id="navRoles" style="display:none;">
                 <span class="nav-icon"><i data-lucide="shield"></i></span>
                 <span class="nav-label">Role Management</span>
+            </a>
+            <a class="nav-item" data-section="governance" onclick="showSection('governance')" id="navGovernance">
+                <span class="nav-icon"><i data-lucide="activity"></i></span>
+                <span class="nav-label">Governance L8</span>
             </a>
         </nav>
 
@@ -128,6 +126,36 @@
                 </div>
             </div>
         </header>
+
+        <!-- ═══════ Pipeline Progress Banner ═══════ -->
+        <div id="pipelineProgressBanner"
+            style="display:none; position:sticky; top:0; z-index:200; background:rgba(17,17,34,0.95); backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,0.07); padding:0.6rem 1.5rem; animation:fadeInDown 0.3s ease;">
+            <div style="display:flex; align-items:center; gap:1rem; max-width:900px;">
+                <div style="flex:1;">
+                    <div
+                        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+                        <span id="pipelineProgressLabel"
+                            style="font-size:0.78rem; font-weight:600; color:#a5b4fc; letter-spacing:0.04em;">⏳
+                            Initialising...</span>
+                        <span id="pipelineProgressPct"
+                            style="font-size:0.78rem; font-weight:700; color:#e0e7ff;">0%</span>
+                    </div>
+                    <div style="height:6px; background:rgba(255,255,255,0.08); border-radius:99px; overflow:hidden;">
+                        <div id="pipelineProgressBar"
+                            style="height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,#6366f1,#8b5cf6,#a78bfa); transition:width 0.6s ease; box-shadow:0 0 10px rgba(99,102,241,0.6);">
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:0.35rem; margin-top:0.45rem; flex-wrap:wrap;">
+                        <span class="pp-step" id="pp2" title="Financial Extraction">L2</span>
+                        <span class="pp-step" id="pp3" title="Data Cleaning">L3</span>
+                        <span class="pp-step" id="pp4" title="Forensics & Research">L4</span>
+                        <span class="pp-step" id="pp5" title="Risk Scoring">L5</span>
+                        <span class="pp-step" id="pp6" title="HITL Review">L6</span>
+                        <span class="pp-step" id="pp7" title="CAM Report">L7</span>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- ═══════════════ SECTION: DASHBOARD ═══════════════ -->
         <section class="content-section active" id="section-dashboard">
@@ -1280,6 +1308,112 @@
                 </div>
             </div>
         </section>
+
+        
+        
+
+        <!-- ═══════════════ SECTION: GOVERNANCE L8 ═══════════════ -->
+        <section class="content-section" id="section-governance">
+
+            <!-- Banner Header -->
+            <div class="gov-section-banner">
+                <div>
+                    <h2 class="gov-banner-title">&#127959; Governance, Monitoring &amp; Compliance</h2>
+                    <p class="gov-banner-sub">RBI MRM Draft Circular (Aug 2024) &middot; DPDP Act 2023 &middot; CRILC Reporting &middot; Basel II</p>
+                </div>
+                <div class="gov-banner-badges">
+                    <span class="gov-badge gov-badge-green">&#10003; Live Monitoring</span>
+                    <span class="gov-badge gov-badge-amber">&#128198; Quarterly IMV</span>
+                    <span class="gov-badge gov-badge-grey">&#128196; CRILC Compliant</span>
+                    <button class="btn btn-outline btn-sm" onclick="loadGovernance()" style="margin-left:8px;">&#x21BA; Refresh All</button>
+                </div>
+            </div>
+
+            <!-- Row 1: Model Health + Inventory -->
+            <div style="display:grid;grid-template-columns:1fr 300px;gap:1.25rem;margin-bottom:1.25rem;">
+
+                <div class="card">
+                    <div class="card-header" style="margin-bottom:0.75rem;">
+                        <span class="card-icon" style="background:linear-gradient(135deg,rgba(99,102,241,0.3),rgba(139,92,246,0.2));">&#128200;</span>
+                        <div>
+                            <h3 style="margin:0 0 2px;">Model Performance Metrics</h3>
+                            <p style="font-size:0.76rem;color:var(--text-secondary);margin:0;">RBI MRM Circular &sect;4.2 &mdash; AUC, KS, Gini, Brier thresholds</p>
+                        </div>
+                    </div>
+                    <div id="govPanel1"><div class="empty-state" style="padding:2rem;">&#8987; Loading metrics&hellip;</div></div>
+                </div>
+
+                <div class="card" style="display:flex;flex-direction:column;">
+                    <div class="card-title">&#128194; Model Registry (RMCB)</div>
+                    <div id="govModelInventory" style="flex:1;"><div class="empty-state">Loading&hellip;</div></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);">
+                        <button class="btn btn-outline btn-sm"
+                            onclick="showExplanationModal(STATE.currentApp &amp;&amp; STATE.currentApp.case_id)"
+                            style="flex:1;font-size:0.72rem;">
+                            &#128221; Right to Explanation
+                        </button>
+                        <button class="btn btn-outline btn-sm"
+                            onclick="fetch('/api/layer8/quarterly-report').then(function(r){return r.json();}).then(function(d){showToast('Q-Report generated: '+d.quarter);console.log(d);})"
+                            style="flex:1;font-size:0.72rem;">
+                            &#128196; Q-Report
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Row 2: PSI Drift + Override Patterns -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
+                <div class="card">
+                    <div class="card-title">&#127777; PSI Feature Drift &mdash; 25 Credit Features</div>
+                    <div id="govPanel2"><div class="empty-state">Loading&hellip;</div></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">&#9878;&#65039; Decision &amp; Override Patterns</div>
+                    <div id="govPanel3"><div class="empty-state">Loading&hellip;</div></div>
+                </div>
+            </div>
+
+            <!-- Row 3: SMA Dashboard + Retraining -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
+                <div class="card">
+                    <div class="card-title">&#128680; SMA / NPA Early Warning Dashboard</div>
+                    <div id="govPanel4"><div class="empty-state">Loading&hellip;</div></div>
+                </div>
+                <div class="card">
+                    <div class="card-title">&#128260; Model Retraining Pipeline</div>
+                    <div id="govPanel5"><div class="empty-state">Loading&hellip;</div></div>
+                </div>
+            </div>
+
+            <!-- Row 4: CRILC Full-width -->
+            <div class="card">
+                <div class="card-title">&#128203; CRILC Submissions &mdash; RBI Mandated (Exposures &ge; &#8377;5 Cr)</div>
+                <div id="govPanel6"><div class="empty-state">Loading&hellip;</div></div>
+            </div>
+
+        </section>
+
+        <!-- Modal: DPDP Right-to-Explanation (Sec. 14, DPDP Act 2023) -->
+        <div class="modal-overlay" id="modalExplanation" style="display:none;">
+            <div class="modal" style="max-width:640px;border-top:3px solid #6366f1;">
+                <div class="modal-header">
+                    <div>
+                        <h3 style="margin:0 0 2px;">&#128221; AI Decision Explanation</h3>
+                        <p style="font-size:0.75rem;color:var(--text-secondary);margin:0;">Sec. 14 &mdash; DPDP Act 2023 &middot; Right to Explanation</p>
+                    </div>
+                    <span class="close" onclick="document.getElementById('modalExplanation').style.display='none'">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(99,102,241,0.08);border-radius:8px;border:1px solid rgba(99,102,241,0.2);margin-bottom:1rem;">
+                        <span style="font-size:0.75rem;color:var(--text-secondary);">Case ID:</span>
+                        <strong id="explanationCaseId" style="color:#a5b4fc;">&mdash;</strong>
+                    </div>
+                    <div id="explanationBody" style="min-height:200px;"></div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- ═══════════════════ MODALS ═══════════════════ -->
