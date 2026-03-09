@@ -14,6 +14,17 @@
 </div>
 
 ---
+```mermaid
+flowchart LR
+A[Document Upload] --> B[Data Extraction]
+B --> C[Financial Reconciliation]
+C --> D[Feature Engineering]
+D --> E[AI Risk Engine]
+E --> F[Human Review]
+F --> G[CAM Generation]
+G --> H[Governance Dashboard]
+```
+---
 ## 📑 Table of Contents
 
 - [Executive Summary](#-executive-summary)
@@ -372,4 +383,5 @@ See the `LICENSE` file for more details.
 
 
 ---
+
 
