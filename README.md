@@ -30,6 +30,22 @@ Key capabilities include:
 
 ---
 
+## 🛤️ End-to-End Workflow: What Happens When You Upload?
+
+1. **Document Upload & Ingestion (Layer 1):** The user uploads a batch of MSME financial documents (PDFs, CSVs, Excel, Images) via the UI. The system automatically classifies each document type. 
+   - **HITL Checkpoint 1 (Document Review):** The user verifies the AI's document classification and can manually reassign document types if incorrect before proceeding. *(Solves: Contextual "Garbage In, Garbage Out" errors, preventing incorrectly classified documents from corrupting the downstream pipeline.)*
+2. **Extraction & Validation (Layer 2 & 3):** Data is extracted via local parsing or OCR. It validates authenticity (e.g., GSTIN checks) and cross-triangulates values across different sources (reconciling Bank Statements with GST Returns).
+   - **HITL Checkpoint 2 (Data Verification):** The user reviews the extracted key data points (e.g., account numbers, GSTIN, dates) for accuracy and can correct any OCR/parsing errors. *(Solves: OCR hallucinations and extraction failures, ensuring the foundational numerical data model is 100% accurate before moving to the scoring engine.)*
+3. **Feature Engineering & NLP (Layer 4):** Over 120 key financial ratios and indicators are derived. NLP parses qualitative data like auditor notes or management commentary.
+   - **HITL Checkpoint 3 (Ratio Calibration):** The user can review the AI-derived financial ratios and qualitative summaries, adjusting specific inputs or weights based on unique business context not captured in the documents. *(Solves: Algorithmic rigidity, allowing human officers to inject offline knowledge, such as cyclical business nuances, directly into the quantitative model.)*
+4. **Federated AI Scoring & Context (Layer 5):** The Groq LLM evaluates the aggregated profile to generate a risk category and assess the "5Cs of Credit". Tavily Web Search fetches recent industry news, while SHAP values explicitly explain the key factors driving the AI's score.
+   - **HITL Checkpoint 4 (Pre-Condition Review):** If the AI flags potential hard-reject conditions (e.g., adverse news, major policy violations), the system halts. An authorized user must review these flags and explicitly decide to clean/bypass them or formally reject the application. *(Solves: Auto-rejection anxiety and strict regulatory compliance issues, guaranteeing that severe exceptions and negative flags are always arbitrated by a human.)*
+5. **Final Decision & Sign-off (Layer 6):** An authorized Credit Officer reviews the AI's final recommendation and comprehensive explanations. They can accept the AI's decision or execute a hard-override by providing detailed justification and signing off with a digital signature.
+6. **Automated CAM Generation (Layer 7):** A comprehensive, regulatory-grade Credit Appraisal Memorandum (CAM) report is auto-generated as a PDF, documenting the financials, AI insights, and final human decision.
+7. **Governance & Auditing (Layer 8):** The finalized application telemetry is routed to the L8 Governance dashboard, continuously tracking model drift, performance metrics, and risk distributions for compliance purposes.
+
+---
+
 ## 🌟 Additional Enterprise Features
 Beyond the core AI scoring engine, Intelli-Credit ships with a suite of enterprise-grade auxiliary systems to ensure security, auditability, and team collaboration:
 
@@ -175,6 +191,55 @@ Intelli-Credit/
 ├── tests/                      # Unit testing and integration suites
 └── requirements.txt            # Python environment dependencies
 ```
+## What we implemented:
+
+### Technical depth
+
+* 8-layer architecture
+* document intelligence
+* financial reconciliation
+* AI risk engine
+* explainability
+* CAM generation
+
+### Governance & compliance
+
+* audit logs
+* history tracking
+* governance dashboard
+* model monitoring
+
+### Human trust layer
+
+* Human-in-the-loop
+* override warnings
+* decision summary updates
+
+### Enterprise platform features
+
+* RBAC
+* dynamic roles
+* user management
+* maker-checker signoff
+
+### Intelligence
+
+* web research (Tavily)
+* explainable risk scoring
+* SHAP-like reasoning
+* LLM summarization
+---
+### “Why Our System Is Better Than Current Credit Appraisal”
+
+
+
+| Current System      | Intelli-Credit     |
+| ------------------- | ------------------ |
+| Manual analysis     | Automated pipeline |
+| Weeks of processing | Minutes            |
+| Human bias          | Explainable AI     |
+| Scattered documents | Unified CAM        |
+
 
 ---
 
