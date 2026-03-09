@@ -281,4 +281,60 @@ Intelli-Credit/
    *The server uses SocketIO and threads to support asynchronous pipeline operations. By default, it will operate on `http://127.0.0.1:5000`.*
 
 ---
+## 👥 Team
+
+**Team Name:** PraxisCode X
+
+| Name | Role |
+|-----|------|
+| **V S S K Sai Narayana** | Team Leader |
+| **Sujeet Sahni** | Team Member |
+| **Sujeet Jaiswal** | Team Member |
+| **Ushmita Pawar** | Team Member |
+
+PraxisCode X is a multidisciplinary team focused on building intelligent, scalable AI systems for real-world financial and enterprise challenges.  
+Our team designed and implemented the **Intelli-Credit Decisioning Engine**, combining document intelligence, explainable AI, financial analytics, and governance frameworks to address the complexities of MSME credit appraisal.
+
+---
+
+## 🙏 Acknowledgements
+
+This project was developed as part of the **AI/ML Hackathon by Vivriti Capital – The "Intelli-Credit" Challenge**.
+
+The hackathon challenges participants to design an **AI-powered Credit Decisioning Engine** capable of automating the end-to-end preparation of a **Comprehensive Credit Appraisal Memo (CAM)**. The objective is to bridge the intelligence gap in corporate credit underwriting by leveraging modern AI technologies.
+
+We would like to thank:
+
+- **Vivriti Capital** for organizing this challenge and providing a real-world fintech problem statement.
+- The **AI/ML Hackathon organizers and mentors** for encouraging innovative solutions in the credit analytics space.
+- The broader **open-source AI and Python communities**, whose tools and libraries make advanced systems like Intelli-Credit possible.
+
+This project represents our attempt to demonstrate how **AI, explainability, and human oversight can work together to modernize credit decision systems**.
+
+---
+## 🤝 Contributors
+
+This project was developed by **Team PraxisCode X**.
+
+Primary Contributors:
+
+- V S S K Sai Narayana
+- Sujeet Sahni
+- Sujeet Jaiswal
+- Ushmita Pawar
+
+We welcome suggestions, improvements, and discussions that can further enhance the Intelli-Credit platform.
+
+---
+## 📜 License
+
+This project is released under the **MIT License**.
+
+You are free to use, modify, and distribute this software for academic, research, and development purposes, provided proper attribution is given.
+
+See the `LICENSE` file for more details.
+
+---
 *Developed by PraxisCode X for the Intelli-Credit Challenge.*
+
+---
