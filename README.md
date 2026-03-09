@@ -191,9 +191,9 @@ Intelli-Credit/
 ├── tests/                      # Unit testing and integration suites
 └── requirements.txt            # Python environment dependencies
 ```
-## What we implemented:
+## 🔑 Key Capabilities Implemented:
 
-### Technical depth
+### Technical Depth
 
 * 8-layer architecture
 * document intelligence
@@ -202,27 +202,27 @@ Intelli-Credit/
 * explainability
 * CAM generation
 
-### Governance & compliance
+### Governance & Compliance
 
 * audit logs
 * history tracking
 * governance dashboard
 * model monitoring
 
-### Human trust layer
+### Human Trust Layer
 
 * Human-in-the-loop
 * override warnings
 * decision summary updates
 
-### Enterprise platform features
+### Enterprise Platform Features
 
 * RBAC
 * dynamic roles
 * user management
 * maker-checker signoff
 
-### Intelligence
+### Intelligence Layer
 
 * web research (Tavily)
 * explainable risk scoring
@@ -240,6 +240,10 @@ Intelli-Credit/
 | Human bias          | Explainable AI     |
 | Scattered documents | Unified CAM        |
 
+
+---
+
+## 🖥️ System Demo
 
 ---
 
