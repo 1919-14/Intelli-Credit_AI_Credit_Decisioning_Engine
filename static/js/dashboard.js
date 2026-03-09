@@ -2642,6 +2642,7 @@ async function handleHitlOverride() {
         const data = await res.json();
 
         if (data.bullet_points) {
+            STATE._l6RiskBullets = data.bullet_points;
             const warningUl = document.getElementById('hitlDecRiskBullets');
             warningUl.innerHTML = data.bullet_points.map(b => `<li style="margin-bottom:0.4rem;">${b.replace(/^•\s*/, '')}</li>`).join('');
 
@@ -2686,7 +2687,8 @@ async function submitHitlDecision(isOverride) {
             decision: document.getElementById('hitlDecSelect').value,
             loan_amount: document.getElementById('hitlDecAmount').value,
             interest_rate: document.getElementById('hitlDecRate').value,
-            reason: reason
+            reason: reason,
+            risk_bullets: STATE._l6RiskBullets || []
         };
     }
 

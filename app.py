@@ -1697,6 +1697,61 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
             if "interest_rate" in overrides: layer5_result["decision_summary"]["interest_rate"] = float(overrides["interest_rate"])
             layer5_result["decision_summary"]["override_reason"] = overrides.get("reason", "Accepted AI decision")
             
+            # --- Generate Fresh Decision Summary with LLM ---
+            if overrides.get("reason") and "Accepted AI decision" not in overrides.get("reason", ""):
+                try:
+                    import os
+                    from groq import Groq
+                    
+                    bullets = overrides.get("risk_bullets", [])
+                    risks_str = "\n".join([f"- {b.lstrip('•').strip()}" for b in bullets]) if bullets else "Pending further manual review."
+                    
+                    new_amt = overrides.get("loan_amount", layer5_result["decision_summary"].get("sanction_amount_lakhs"))
+                    new_rate = overrides.get("interest_rate", layer5_result["decision_summary"].get("interest_rate"))
+                    new_dec = overrides.get("decision", layer5_result["decision_summary"].get("decision"))
+                    override_reason = overrides['reason']
+                    
+                    prompt = f"""You are a Senior Credit Officer at a commercial bank. You are writing the final credit decision summary for a loan application.
+The AI initially processed this, but a human officer has overridden the decision.
+
+Write a fresh, cohesive 2-3 paragraph professional summary of the final decision. 
+Do not mention "The old AI decision was..." just state the final facts clearly, but explicitly mention that this is a human-overridden decision and detail the human reasoning and the safety checkpoints/risks.
+
+OVERRIDE DETAILS:
+Final Decision: {new_dec}
+Final Amount: {new_amt} Lakhs
+Final Interest Rate: {new_rate}%
+Human Officer's Reason for Override: "{override_reason}"
+
+Identified Risks / Safety Measures:
+{risks_str}
+
+Format the output cleanly in plain text or simple markdown. Be professional, concise, and definitive."""
+
+                    client = Groq(api_key=os.getenv("API_KEY"))
+                    response = client.chat.completions.create(
+                        model="meta-llama/llama-4-scout-17b-16e-instruct",
+                        messages=[
+                            {"role": "system", "content": "You are a Senior Credit Officer. Provide only the summary text without any surrounding commentary."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3,
+                        max_tokens=600
+                    )
+                    fresh_summary = response.choices[0].message.content.strip()
+                    layer5_result["decision_summary"]["llm_decision_summary"] = fresh_summary
+                except Exception as e:
+                    print(f"Failed to generate fresh LLM summary: {e}")
+                    # Fallback to append if API fails
+                    old_summary = layer5_result["decision_summary"].get("llm_decision_summary", "")
+                    override_text = f"\n\n**⚠️ Human Override Applied**\n**Reason for Change:** {overrides.get('reason', '')}\n\n**Safety Measures & Identified Risks:**\n"
+                    bullets = overrides.get("risk_bullets", [])
+                    if bullets:
+                        override_text += "\n".join([f"- {b.lstrip('•').strip()}" for b in bullets])
+                    else:
+                        override_text += "- Pending further manual review."
+                    layer5_result["decision_summary"]["llm_decision_summary"] = old_summary + override_text
+
             # Recalculate metrics if needed
             if amount_changed or rate_changed:
                 try:
@@ -1734,7 +1789,7 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
                     recalc["binding_constraint"] = "MANUAL_OVERRIDE"
                     
                     recalc["hitl_override_note"] = f"Manual Override Matrix: Computed based on {new_amt}L @ {new_rate}%"
-                    layer5_result["loan_structure"] = recalc
+                    layer5_result["decision_summary"]["loan_structure"] = recalc
                 except Exception as e:
                     print(f"Failed to recalculate loan metrics: {e}")
             
@@ -1966,6 +2021,7 @@ def layer6_hitl_decision(app_id):
                 "loan_amount": data.get('loan_amount'),
                 "interest_rate": data.get('interest_rate'),
                 "reason": data.get('reason'),
+                "risk_bullets": data.get('risk_bullets', []),
                 "conditions": data.get('conditions', [])
             }
         }
@@ -2009,7 +2065,7 @@ Evaluate the risks of this override. Provide EXACTLY 3-4 bullet points in plain 
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=1000
         )
         text = response.choices[0].message.content.strip()
         bullets = [line.strip() for line in text.split('\n') if line.strip() and line.strip().startswith('•')]
