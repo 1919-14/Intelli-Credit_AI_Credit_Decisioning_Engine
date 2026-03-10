@@ -14,6 +14,38 @@
 </div>
 
 ---
+```mermaid
+flowchart LR
+A[Document Upload] --> B[Data Extraction]
+B --> C[Financial Reconciliation]
+C --> D[Feature Engineering]
+D --> E[AI Risk Engine]
+E --> F[Human Review]
+F --> G[CAM Generation]
+G --> H[Governance Dashboard]
+```
+---
+## 📑 Table of Contents
+
+- [Executive Summary](#-executive-summary)
+- [Documentation](#-documentation)
+- [Additional Enterprise Features](#-additional-enterprise-features)
+- [System Architecture & Data Flow](#-system-architecture--data-flow)
+- [Project Structure](#-project-structure)
+- [Key Capabilities Implemented](#-key-capabilities-implemented)
+  - [Technical Depth](#technical-depth)
+  - [Governance & Compliance](#governance--compliance)
+  - [Human Trust Layer](#human-trust-layer)
+  - [Enterprise Platform Features](#enterprise-platform-features)
+  - [Intelligence Layer](#intelligence-layer)
+- [Why Our System Is Better Than Current Credit Appraisal](#why-our-system-is-better-than-current-credit-appraisal)
+- [Installation & Setup](#-installation--setup)
+- [Team](#-team)
+- [Acknowledgements](#-acknowledgements)
+- [Contributors](#-contributors)
+- [License](#-license)
+
+---
 
 ## 📖 Executive Summary
 The **Intelli-Credit Decisioning Engine** is designed to eliminate the manual bottleneck of MSME credit appraisals. It automatically ingests, validates, and processes unstructured financial documents (Bank Statements, GST Returns, ITRs, Audited Financials) through an 8-layer AI pipeline. 
@@ -28,6 +60,16 @@ Key capabilities include:
 - 🧑‍💻 **Human-in-the-loop (HITL)** safeguards for overriding critical policy rules and finalizing credit decisions with cryptographically simulated digital signatures.
 - 📉 **Layer 8 Governance Dashboard** tracking Model Drift, SMA/CRILC alerts, and live risk metrics for RBI compliance.
 
+---
+## 📚 Documentation
+
+Detailed documentation is available below:
+
+- 📖 [Project Overview](PROJECT_OVERVIEW.md)
+- 🧠 [System Architecture](ARCHITECTURE.md)
+- 🤝 [Contribution Guidelines](CONTRIBUTING.md)
+- 📜 [License](LICENSE)
+  
 ---
 
 ## 🛤️ End-to-End Workflow: What Happens When You Upload?
@@ -191,7 +233,7 @@ Intelli-Credit/
 ├── tests/                      # Unit testing and integration suites
 └── requirements.txt            # Python environment dependencies
 ```
-## 🔑 Key Capabilities Implemented:
+## 🔑 Key Capabilities Implemented
 
 ### Technical Depth
 
@@ -244,6 +286,8 @@ Intelli-Credit/
 ---
 
 ## 🖥️ System Demo
+
+The Intelli-Credit platform provides an interactive dashboard where credit officers can upload documents, review AI insights, adjust financial indicators, and generate a final Credit Appraisal Memorandum.
 
 ---
 
@@ -337,4 +381,7 @@ See the `LICENSE` file for more details.
 ---
 *Developed by PraxisCode X for the Intelli-Credit Challenge.*
 
+
 ---
+
+
