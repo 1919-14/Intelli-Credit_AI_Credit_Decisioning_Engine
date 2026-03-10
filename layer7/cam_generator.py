@@ -238,7 +238,7 @@ class CAMGenerator:
             run = p.add_run('AI Decision Summary: ')
             run.bold = True
             run.font.size = Pt(10)
-            p.add_run(llm_summary[:800])
+            p.add_run(llm_summary)
 
         self.doc.add_paragraph()
         self.cam_content_text += f"EXEC: {company} | Score: {score} | Decision: {decision}\n"
