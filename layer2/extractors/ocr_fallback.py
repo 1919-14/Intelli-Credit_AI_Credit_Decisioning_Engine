@@ -188,6 +188,78 @@ class EasyOCRExtractor:
             m = re.search(r'\b([LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6})\b', text)
             if m: updated["cin"] = m.group(1)
 
+        # --- Credit Rating fields ---
+        if updated.get("latest_credit_rating") is None:
+            for rating_pattern in [r'(CRISIL\s+[A-Z]{1,4}[+-]?)', r'(ICRA\s+[A-Z]{1,4}[+-]?)',
+                                   r'(CARE\s+[A-Z]{1,4}[+-]?)', r'(\[?IND\]?\s+[A-Z]{1,4}[+-]?)']:
+                m = re.search(rating_pattern, text, re.IGNORECASE)
+                if m:
+                    updated["latest_credit_rating"] = m.group(1).strip()
+                    break
+
+        if updated.get("rating_agency") is None:
+            for agency in ["CRISIL", "ICRA", "CARE", "India Ratings", "Brickwork", "Acuité"]:
+                if agency.lower() in text.lower():
+                    updated["rating_agency"] = agency
+                    break
+
+        # --- ALM fields ---
+        if updated.get("liquidity_gap_1m") is None:
+            m = re.search(r'(?:1\s*month|0-30\s*days?|upto\s*1\s*month).*?gap[:\s₹]*([+-]?[\d,]+\.?\d*)', text, re.IGNORECASE)
+            if m: updated["liquidity_gap_1m"] = self._parse_number(m.group(1))
+
+        if updated.get("liquidity_gap_3m") is None:
+            m = re.search(r'(?:3\s*month|1-3\s*months?).*?gap[:\s₹]*([+-]?[\d,]+\.?\d*)', text, re.IGNORECASE)
+            if m: updated["liquidity_gap_3m"] = self._parse_number(m.group(1))
+
+        # --- Shareholding Pattern fields ---
+        if updated.get("promoter_holding_pct") is None:
+            m = re.search(r'(?:Promoter|Promoters?)[\s\S]{0,50}?(\d{1,3}\.?\d{0,2})\s*%', text, re.IGNORECASE)
+            if m: updated["promoter_holding_pct"] = self._parse_number(m.group(1))
+
+        if updated.get("public_holding_pct") is None:
+            m = re.search(r'(?:Public|Non-Promoter)[\s\S]{0,50}?(\d{1,3}\.?\d{0,2})\s*%', text, re.IGNORECASE)
+            if m: updated["public_holding_pct"] = self._parse_number(m.group(1))
+
+        if updated.get("pledged_shares_pct") is None:
+            m = re.search(r'(?:Pledged|Encumbered)[\s\S]{0,50}?(\d{1,3}\.?\d{0,2})\s*%', text, re.IGNORECASE)
+            if m: updated["pledged_shares_pct"] = self._parse_number(m.group(1))
+
+        # --- Borrowing Profile fields ---
+        if updated.get("total_outstanding_borrowings") is None:
+            m = re.search(r'(?:Total Outstanding|Total Borrowing)[:\s₹]*([\\d,]+\\.?\\d*)', text, re.IGNORECASE)
+            if m: updated["total_outstanding_borrowings"] = self._parse_number(m.group(1))
+
+        if updated.get("debt_service_coverage_ratio") is None:
+            m = re.search(r'(?:DSCR|Debt Service Coverage)[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
+            if m: updated["debt_service_coverage_ratio"] = self._parse_number(m.group(1))
+
+        if updated.get("interest_coverage_ratio") is None:
+            m = re.search(r'(?:ICR|Interest Coverage)[:\s]*(\d+\.?\d*)', text, re.IGNORECASE)
+            if m: updated["interest_coverage_ratio"] = self._parse_number(m.group(1))
+
+        # --- Portfolio Performance fields ---
+        if updated.get("gnpa_pct") is None:
+            m = re.search(r'(?:GNPA|Gross NPA)[:\s]*(\d+\.?\d*)\s*%', text, re.IGNORECASE)
+            if m: updated["gnpa_pct"] = self._parse_number(m.group(1))
+
+        if updated.get("nnpa_pct") is None:
+            m = re.search(r'(?:NNPA|Net NPA)[:\s]*(\d+\.?\d*)\s*%', text, re.IGNORECASE)
+            if m: updated["nnpa_pct"] = self._parse_number(m.group(1))
+
+        if updated.get("collection_efficiency_pct") is None:
+            m = re.search(r'(?:Collection Efficiency)[:\s]*(\d+\.?\d*)\s*%', text, re.IGNORECASE)
+            if m: updated["collection_efficiency_pct"] = self._parse_number(m.group(1))
+
+        if updated.get("nim_pct") is None:
+            m = re.search(r'(?:NIM|Net Interest Margin)[:\s]*(\d+\.?\d*)\s*%', text, re.IGNORECASE)
+            if m: updated["nim_pct"] = self._parse_number(m.group(1))
+
+        # --- Cashflow fields ---
+        if updated.get("cashflow_from_operations") is None:
+            m = re.search(r'(?:Cash ?flow from|CFO|Operating Activities)[:\s₹]*([+-]?[\d,]+\.?\d*)', text, re.IGNORECASE)
+            if m: updated["cashflow_from_operations"] = self._parse_number(m.group(1))
+
         return updated
 
     @staticmethod

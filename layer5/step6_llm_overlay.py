@@ -25,7 +25,8 @@ def run_llm_overlay(
 
     try:
         from groq import Groq
-        client = Groq(api_key=os.getenv("API_KEY", ""))
+        from utils_keys import get_content_generation_key
+        client = Groq(api_key=get_content_generation_key())
 
         resp = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
@@ -103,6 +104,15 @@ CONTEXT 5 — SECTOR INTELLIGENCE
 Sector Risk Score: {features.get('sector_risk_score', 0.3):.2f}
 Sector Summary: {sector_data.get('summary', 'No sector data available')}
 
+CONTEXT 6 — ESG & SUSTAINABILITY DATA
+Carbon Footprint: {features.get('carbon_footprint_mt', 'N/A')} MT CO₂e
+Transition Risk: {features.get('esg_transition_risk', 'N/A')}
+Physical Risk: {features.get('esg_physical_risk', 'N/A')}
+Sustainability Rating: {features.get('sustainability_rating', 'N/A')}
+Green Financing Eligible: {features.get('green_financing_eligible', 'N/A')}
+Renewable Energy: {features.get('renewable_energy_pct', 'N/A')}%
+Note: If ESG data shows "N/A", no sustainability report was provided — skip ESG assessment.
+
 TASK:
 1. Write a 5-7 sentence qualitative credit opinion.
 2. Assess the Five Cs of Credit:
@@ -116,6 +126,7 @@ TASK:
 4. Identify the single biggest qualitative strength NOT captured by the model.
 5. Recommend a score adjustment between -30 and +30 with justification.
 6. Flag override recommendation: "MAINTAIN" (automated is fine) or "ESCALATE" (needs human committee).
+7. If ESG data is available, comment briefly on how it affects creditworthiness and whether Green Loan pricing is justified.
 
 Return ONLY valid JSON:
 {{
@@ -131,7 +142,8 @@ Return ONLY valid JSON:
   "biggest_strength": "description of unmodeled strength",
   "score_adjustment": integer_between_-30_and_30,
   "adjustment_justification": "why this adjustment",
-  "override_flag": "MAINTAIN or ESCALATE"
+  "override_flag": "MAINTAIN or ESCALATE",
+  "esg_comment": "brief ESG assessment or null if no data"
 }}"""
 
 
@@ -245,7 +257,8 @@ Write in a professional but accessible tone — the explanation should be unders
 
     try:
         from groq import Groq
-        client = Groq(api_key=os.getenv("API_KEY", ""))
+        from utils_keys import get_content_generation_key
+        client = Groq(api_key=get_content_generation_key())
         resp = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="meta-llama/llama-4-scout-17b-16e-instruct",

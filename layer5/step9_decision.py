@@ -151,4 +151,32 @@ def _generate_covenants(features, llm, conditions, amber_count, od_util):
                 "description": "Independent legal opinion on pending litigation required before disbursal.",
             })
 
+    # ESG Green Loan covenant
+    if features.get("green_financing_eligible", False) or (isinstance(llm, dict) and str(llm.get("green_financing_eligible", "")).lower() == "true"):
+        covenants.append({
+            "id": "COV-07",
+            "type": "ESG",
+            "description": "Green Loan compliance — borrower must submit annual ESG/Sustainability Report "
+                           "and maintain green financing eligibility criteria. Interest discount of 0.25–0.50% "
+                           "is conditional on continued ESG compliance (RBI Sustainable Finance Framework).",
+        })
+
+    # Indebtedness mismatch covenant (Annual Return vs Financial Statements)
+    declared = features.get("declared_indebtedness")
+    total_borr = features.get("total_outstanding_borrowings")
+    if declared and total_borr:
+        try:
+            d, b = float(declared), float(total_borr)
+            if b > 0 and abs(d - b) / b * 100 > 5:
+                covenants.append({
+                    "id": "COV-08",
+                    "type": "Statutory",
+                    "description": f"Indebtedness mismatch detected: Declared (Annual Return) = ₹{d:,.0f} vs "
+                                   f"Financial Statements = ₹{b:,.0f} ({abs(d-b)/b*100:.1f}% gap). "
+                                   f"CA-certified reconciliation required before disbursal.",
+                })
+        except (ValueError, TypeError):
+            pass
+
     return covenants
+

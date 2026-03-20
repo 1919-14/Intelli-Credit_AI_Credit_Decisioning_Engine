@@ -286,7 +286,8 @@ def _explain_officer_adjustments(data: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         from groq import Groq
-        client = Groq(api_key=os.getenv("API_KEY", ""))
+        from utils_keys import get_rotated_groq_key
+        client = Groq(api_key=get_rotated_groq_key())
 
         officer_summary = officer.get("summary", "No officer notes provided")
         override_context = "\n".join([f"- {k}: {v}" for k, v in hitl3_reasons.items()]) or "None"

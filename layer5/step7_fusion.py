@@ -49,11 +49,21 @@ def fuse_scores(
 
     print(f"  Step 7 Fusion: {raw_score} + ({llm_adj:+d}) − {unc_pen} + ({amber_pen}) + ({hc_pen}) = {final_score} ({final_band})")
 
+    fusion_narrative = (
+        f"XGBoost raw score {raw_score}"
+        f" → LLM qualitative adjustment {llm_adj:+d}"
+        f" → Uncertainty penalty -{unc_pen}"
+        f" → AMBER alert penalty {amber_pen}"
+        f" → Hard-condition penalty {hc_pen}"
+        f" → Final Adjusted Score {final_score} ({final_band})"
+    )
+
     return {
         "final_score": final_score,
         "final_band": final_band,
         "final_pd": final_pd,
         "score_breakdown": breakdown,
+        "fusion_narrative": fusion_narrative,
         "amber_count": amber_count,
         "hc_count": len(conditions),
     }

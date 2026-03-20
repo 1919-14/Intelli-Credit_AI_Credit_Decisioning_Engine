@@ -12,7 +12,8 @@ def _call_groq_classify(prompt: str, content: str) -> dict:
     """Call Groq LLM to classify search results."""
     try:
         from groq import Groq
-        client = Groq(api_key=os.getenv("API_KEY", ""))
+        from utils_keys import get_rotated_groq_key
+        client = Groq(api_key=get_rotated_groq_key())
         resp = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": prompt},

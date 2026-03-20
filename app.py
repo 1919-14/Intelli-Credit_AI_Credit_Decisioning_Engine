@@ -2,9 +2,10 @@ import os
 import json
 import shutil
 import secrets
+import requests as http_requests
 from datetime import datetime
 from functools import wraps
-
+import webbrowser as wb
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_socketio import SocketIO, emit
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -18,7 +19,7 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET", secrets.token_hex(32))
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max upload
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
@@ -264,6 +265,48 @@ def init_database():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # ─── HITL Issues Table (officer-added custom flags) ──────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS hitl_issues (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            case_id VARCHAR(50) NOT NULL,
+            checkpoint INT NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            severity VARCHAR(20) DEFAULT 'MEDIUM',
+            description TEXT,
+            added_by INT NOT NULL,
+            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX (case_id)
+        )
+    """)
+
+    # ─── Entity Onboarding Columns on applications ───────────────────────
+    onboarding_columns = [
+        "cin VARCHAR(21)",
+        "pan VARCHAR(10)",
+        "sector VARCHAR(100)",
+        "state VARCHAR(50)",
+        "estimated_turnover FLOAT",
+        "entity_type VARCHAR(50)",
+        "gstin VARCHAR(20)",
+        "gstin_verified BOOLEAN DEFAULT FALSE",
+        "gstin_official_name VARCHAR(200)",
+        "gstin_official_state VARCHAR(100)",
+        "gstin_mismatch_fields JSON",
+        "loan_type VARCHAR(50)",
+        "loan_amount FLOAT",
+        "tenure_months INT",
+        "proposed_rate FLOAT",
+        "loan_purpose TEXT",
+        "custom_fields JSON",
+    ]
+    for col_def in onboarding_columns:
+        col_name = col_def.split()[0]
+        try:
+            cur.execute(f"ALTER TABLE applications ADD COLUMN {col_def}")
+        except:
+            pass  # Column already exists
 
     # ─── Seed Default Roles ──────────────────────────────────────────────────
     default_roles = [
@@ -928,6 +971,295 @@ def application_history():
     return jsonify(apps)
 
 
+# ─── Entity Onboarding API ───────────────────────────────────────────────────
+@app.route('/api/onboard', methods=['POST'])
+@login_required
+@permission_required('CREATE_APP')
+def onboard_entity():
+    """Create application with full entity + loan details from onboarding wizard."""
+    data = request.json
+    company_name = data.get('company_name', '').strip()
+    if not company_name:
+        return jsonify({"error": "Company name is required"}), 400
+
+    case_id = generate_case_id()
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO applications (
+                case_id, company_name, created_by,
+                cin, pan, sector, state, estimated_turnover, entity_type,
+                gstin, gstin_verified, gstin_official_name, gstin_official_state,
+                loan_type, loan_amount, tenure_months, proposed_rate, loan_purpose
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            case_id, company_name, session['user_id'],
+            data.get('cin', ''), data.get('pan', ''),
+            data.get('sector', ''), data.get('state', ''),
+            data.get('estimated_turnover'), data.get('entity_type', ''),
+            data.get('gstin', ''), data.get('gstin_verified', False),
+            data.get('gstin_official_name', ''), data.get('gstin_official_state', ''),
+            data.get('loan_type', ''), data.get('loan_amount'),
+            data.get('tenure_months'), data.get('proposed_rate'),
+            data.get('loan_purpose', '')
+        ))
+        conn.commit()
+        app_id = cur.lastrowid
+        log_audit(session['user_id'], 'ONBOARD_ENTITY', case_id, {
+            "company": company_name, "loan_type": data.get('loan_type'),
+            "loan_amount": data.get('loan_amount')
+        })
+        return jsonify({"status": "ok", "id": app_id, "case_id": case_id})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ─── GST Verification API ───────────────────────────────────────────────────
+GSTIN_STATE_CODES = {
+    "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab",
+    "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana",
+    "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh",
+    "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh",
+    "13": "Nagaland", "14": "Manipur", "15": "Mizoram",
+    "16": "Tripura", "17": "Meghalaya", "18": "Assam",
+    "19": "West Bengal", "20": "Jharkhand", "21": "Odisha",
+    "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+    "26": "Dadra & Nagar Haveli", "27": "Maharashtra", "29": "Karnataka",
+    "30": "Goa", "32": "Kerala", "33": "Tamil Nadu",
+    "34": "Puducherry", "36": "Telangana", "37": "Andhra Pradesh",
+}
+
+@app.route('/api/gst/verify')
+@login_required
+def verify_gstin():
+    """Verify GSTIN via public GST API and return official details."""
+    gstin = request.args.get('gstin', '').strip().upper()
+    if not gstin or len(gstin) != 15:
+        return jsonify({"error": "Invalid GSTIN format. Must be 15 characters."}), 400
+
+    # Extract state from GSTIN prefix
+    state_code = gstin[:2]
+    state_name = GSTIN_STATE_CODES.get(state_code, "Unknown")
+
+    # Extract PAN embedded in GSTIN (chars 3-12)
+    embedded_pan = gstin[2:12]
+
+    result = {
+        "gstin": gstin,
+        "state_code": state_code,
+        "state": state_name,
+        "embedded_pan": embedded_pan,
+        "verified": False,
+        "legal_name": "",
+        "trade_name": "",
+        "registration_status": "",
+        "business_type": "",
+        "registration_date": "",
+    }
+
+    # Try public GST API
+    try:
+        api_url = f"https://sheet.best/api/sheets/d4cbdb0b-b36a-4d53-8ded-9ae9dfc7b0d9/GSTIN/{gstin}"
+        resp = http_requests.get(api_url, timeout=8)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and isinstance(data, list) and len(data) > 0:
+                entry = data[0]
+                result["legal_name"] = entry.get("Legal Name", entry.get("lgnm", ""))
+                result["trade_name"] = entry.get("Trade Name", entry.get("tradeNam", ""))
+                result["registration_status"] = entry.get("Status", entry.get("sts", "Active"))
+                result["business_type"] = entry.get("Business Type", entry.get("ctb", ""))
+                result["registration_date"] = entry.get("Registration Date", entry.get("rgdt", ""))
+                result["verified"] = True
+    except Exception as api_err:
+        print(f"GST API error: {api_err}")
+
+    # Fallback: if public API failed, try alternate endpoint
+    if not result["verified"]:
+        try:
+            alt_url = f"https://commonapi.mastersindia.co/commonapis/searchgstin?gstin={gstin}"
+            resp2 = http_requests.get(alt_url, timeout=8, headers={"Accept": "application/json"})
+            if resp2.status_code == 200:
+                j = resp2.json()
+                if j.get("data"):
+                    d = j["data"]
+                    result["legal_name"] = d.get("lgnm", "")
+                    result["trade_name"] = d.get("tradeNam", "")
+                    result["registration_status"] = d.get("sts", "Active")
+                    result["business_type"] = d.get("ctb", "")
+                    result["registration_date"] = d.get("rgdt", "")
+                    result["verified"] = True
+        except Exception as alt_err:
+            print(f"Alt GST API error: {alt_err}")
+
+    # Even if APIs failed, we can still derive useful info from GSTIN structure
+    if not result["verified"]:
+        result["legal_name"] = f"[Verification unavailable - manual entry needed]"
+        result["verified"] = False
+
+    return jsonify(result)
+
+
+# ─── HITL Issue Management APIs ──────────────────────────────────────────────
+@app.route('/api/hitl/issues', methods=['GET'])
+@login_required
+def get_hitl_issues():
+    """Get all officer-added issues for a case."""
+    case_id = request.args.get('case_id', '')
+    checkpoint = request.args.get('checkpoint')
+
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+
+    if checkpoint:
+        cur.execute("""
+            SELECT hi.*, u.full_name as added_by_name
+            FROM hitl_issues hi LEFT JOIN users u ON hi.added_by = u.id
+            WHERE hi.case_id = %s AND hi.checkpoint = %s
+            ORDER BY hi.added_at DESC
+        """, (case_id, int(checkpoint)))
+    else:
+        cur.execute("""
+            SELECT hi.*, u.full_name as added_by_name
+            FROM hitl_issues hi LEFT JOIN users u ON hi.added_by = u.id
+            WHERE hi.case_id = %s ORDER BY hi.checkpoint, hi.added_at DESC
+        """, (case_id,))
+
+    issues = cur.fetchall()
+    for i in issues:
+        if i.get('added_at'):
+            i['added_at'] = i['added_at'].isoformat()
+    cur.close()
+    conn.close()
+    return jsonify(issues)
+
+
+@app.route('/api/hitl/issues', methods=['POST'])
+@login_required
+def add_hitl_issue():
+    """Officer adds a custom issue/flag at any HITL checkpoint."""
+    data = request.json
+    case_id = data.get('case_id', '')
+    checkpoint = data.get('checkpoint')  # 1, 2, 3, or 4
+    title = data.get('title', '').strip()
+    severity = data.get('severity', 'MEDIUM').upper()
+    description = data.get('description', '').strip()
+
+    if not case_id or not checkpoint or not title:
+        return jsonify({"error": "case_id, checkpoint, and title are required"}), 400
+
+    if severity not in ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL'):
+        severity = 'MEDIUM'
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO hitl_issues (case_id, checkpoint, title, severity, description, added_by)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (case_id, int(checkpoint), title, severity, description, session['user_id']))
+        conn.commit()
+        issue_id = cur.lastrowid
+        log_audit(session['user_id'], 'HITL_ADD_ISSUE', case_id, {
+            "checkpoint": checkpoint, "title": title, "severity": severity
+        })
+        return jsonify({"status": "ok", "id": issue_id, "message": f"Issue '{title}' added to checkpoint {checkpoint}"})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.route('/api/hitl/custom_field', methods=['POST'])
+@login_required
+def add_hitl_custom_field():
+    """Officer adds a custom data field to the extracted JSON (HITL 2 - Data Verification)."""
+    data = request.json
+    app_id = data.get('app_id')
+    field_name = data.get('field_name', '').strip().lower().replace(' ', '_')
+    field_value = data.get('field_value', '')
+    field_type = data.get('field_type', 'text')  # text, number
+
+    if not app_id or not field_name:
+        return jsonify({"error": "app_id and field_name are required"}), 400
+
+    # Convert to number if requested
+    if field_type == 'number':
+        try:
+            field_value = float(str(field_value).replace(',', ''))
+        except:
+            pass
+
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute("SELECT layer2_output, custom_fields, case_id FROM applications WHERE id=%s", (app_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "Application not found"}), 404
+
+        # Update custom_fields JSON
+        existing_custom = json.loads(row['custom_fields']) if row.get('custom_fields') else {}
+        existing_custom[field_name] = {
+            "value": field_value,
+            "type": field_type,
+            "added_by": session.get('full_name', 'Officer'),
+            "added_at": datetime.utcnow().isoformat()
+        }
+
+        # Also inject it into layer2_output so it flows through the pipeline
+        l2 = {}
+        if row.get('layer2_output'):
+            try:
+                l2 = json.loads(row['layer2_output']) if isinstance(row['layer2_output'], str) else row['layer2_output']
+            except:
+                l2 = {}
+
+        # Inject into extracted.financial_data if possible
+        if 'extracted' in l2 and 'financial_data' in l2['extracted']:
+            l2['extracted']['financial_data'][field_name] = field_value
+            # Also add to a _custom_fields section for tracking
+            if '_custom_fields' not in l2['extracted']['financial_data']:
+                l2['extracted']['financial_data']['_custom_fields'] = {}
+            l2['extracted']['financial_data']['_custom_fields'][field_name] = {
+                "value": field_value, "type": field_type,
+                "added_by": session.get('full_name', 'Officer')
+            }
+
+        cur2 = conn.cursor()
+        cur2.execute(
+            "UPDATE applications SET custom_fields=%s, layer2_output=%s WHERE id=%s",
+            (json.dumps(existing_custom), json.dumps(l2, default=str), app_id)
+        )
+        cur2.close()
+        conn.commit()
+
+        log_audit(session['user_id'], 'HITL_ADD_CUSTOM_FIELD', row.get('case_id', ''), {
+            "field_name": field_name, "field_value": str(field_value)[:100]
+        })
+
+        return jsonify({
+            "status": "ok",
+            "field_name": field_name,
+            "field_value": field_value,
+            "message": f"Custom field '{field_name}' added successfully"
+        })
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 # ─── File Upload API ─────────────────────────────────────────────────────────
 @app.route('/api/upload/<int:app_id>', methods=['POST'])
 @login_required
@@ -980,7 +1312,21 @@ def upload_files(app_id):
 
 
 # ─── Pipeline Execution (WebSocket) ──────────────────────────────────────────
+@socketio.on('rate_limit_decision')
+def handle_rate_limit_decision(data):
+    """
+    Frontend sends this when user resolves the rate-limit modal.
+    data = { case_id: str, decision: 'wait' | 'ocr' }
+    """
+    from layer2.layer2_processor import IntelliCreditPipeline
+    case_id = data.get('case_id', '')
+    decision = data.get('decision', 'ocr')
+    print(f"[Rate Limit] Human decision received: '{decision}' for case {case_id}")
+    IntelliCreditPipeline.resolve_rate_limit_decision(case_id, decision)
+
+
 @socketio.on('run_pipeline')
+
 def handle_run_pipeline(data):
     app_id = data.get('app_id')
     if not app_id:
@@ -1295,6 +1641,7 @@ def layer5_hitl_reject(app_id):
 def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, officer_notes=''):
     """Background task: run Layer 2 through Layer 6."""
     import time
+    _pipeline_start_time = time.time()  # Track total pipeline processing time
 
     # ─── Layer 2: Financial Extraction ───────────────────────────────────
     socketio.emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 5},
@@ -1302,7 +1649,7 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
 
     try:
         from layer2.layer2_processor import IntelliCreditPipeline
-        pipeline = IntelliCreditPipeline()
+        pipeline = IntelliCreditPipeline(socketio=socketio)
 
         socketio.emit('layer_progress', {"layer": 2, "name": "Financial Extraction", "status": "processing", "pct": 30},
                       room=f'app_{app_id}')
@@ -1310,7 +1657,8 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
         result = pipeline.process_files(
             filepaths=filepaths,
             case_id=case_id,
-            company_name=company_name
+            company_name=company_name,
+            app_id=str(app_id)
         )
 
         output_json = result.model_dump_json(indent=2)
@@ -1340,6 +1688,71 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
         conn.close()
         socketio.emit('pipeline_error', {"error": str(e), "layer": 2}, room=f'app_{app_id}')
         return
+
+    # ─── GST Cross-Validation ────────────────────────────────────────────
+    try:
+        conn_gst = get_db()
+        cur_gst = conn_gst.cursor(dictionary=True)
+        cur_gst.execute("""
+            SELECT gstin, gstin_verified, gstin_official_name, gstin_official_state,
+                   pan, company_name as onboard_company_name
+            FROM applications WHERE id=%s
+        """, (app_id,))
+        onboard = cur_gst.fetchone()
+
+        if onboard and onboard.get('gstin_verified'):
+            l2_parsed = json.loads(output_json) if isinstance(output_json, str) else output_json
+            l2_financial = l2_parsed.get('extracted', {}).get('financial_data', {}) or l2_parsed
+            mismatch_fields = []
+
+            # Check company name
+            official_name = (onboard.get('gstin_official_name') or '').strip().upper()
+            extracted_name = (l2_financial.get('legal_name') or l2_financial.get('company_name') or '').strip().upper()
+            if official_name and extracted_name and official_name not in extracted_name and extracted_name not in official_name:
+                mismatch_fields.append({"field": "Company Name", "official": onboard['gstin_official_name'], "extracted": extracted_name})
+
+            # Check PAN
+            onboard_pan = (onboard.get('pan') or '').strip().upper()
+            extracted_pan = (l2_financial.get('pan_number') or '').strip().upper()
+            if onboard_pan and extracted_pan and onboard_pan != extracted_pan:
+                mismatch_fields.append({"field": "PAN Number", "official": onboard_pan, "extracted": extracted_pan})
+
+            # Check state via GSTIN prefix
+            if onboard.get('gstin'):
+                gstin_state_code = onboard['gstin'][:2]
+                gstin_state = GSTIN_STATE_CODES.get(gstin_state_code, '')
+                official_state = (onboard.get('gstin_official_state') or gstin_state).strip()
+                # Compare with any state info in extracted data
+                extracted_state = (l2_financial.get('state') or '').strip()
+                if official_state and extracted_state and official_state.upper() != extracted_state.upper():
+                    mismatch_fields.append({"field": "State", "official": official_state, "extracted": extracted_state})
+
+            if mismatch_fields:
+                # Auto-create HIGH severity HITL issues
+                cur_issue = conn_gst.cursor()
+                for mf in mismatch_fields:
+                    cur_issue.execute("""
+                        INSERT INTO hitl_issues (case_id, checkpoint, title, severity, description, added_by)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (case_id, 1, f"GST Mismatch: {mf['field']}",
+                          'HIGH', f"Official GST record shows '{mf['official']}' but document extraction found '{mf['extracted']}'",
+                          1))  # System user
+                cur_issue.close()
+                conn_gst.commit()
+
+                # Store mismatch info on application
+                cur_gst2 = conn_gst.cursor()
+                cur_gst2.execute("UPDATE applications SET gstin_mismatch_fields=%s WHERE id=%s",
+                                (json.dumps(mismatch_fields), app_id))
+                cur_gst2.close()
+                conn_gst.commit()
+                print(f"⚠️ GST Cross-Validation: {len(mismatch_fields)} mismatch(es) flagged for {case_id}")
+
+        cur_gst.close()
+        conn_gst.close()
+    except Exception as gst_err:
+        print(f"GST cross-validation error (non-fatal): {gst_err}")
+
 
     # ─── Layer 3: Data Cleaning & Normalization ──────────────────────────
     socketio.emit('layer_progress', {"layer": 3, "name": "Data Cleaning & Normalization", "status": "processing", "pct": 10},
@@ -1594,6 +2007,46 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
     try:
         from layer5.layer5_chain import run_layer5
 
+        # Fetch actual loan amount from onboarding + any officer-flagged issues
+        requested_amount = 75.0  # default fallback
+        officer_issues_context = ""
+        custom_fields_context = ""
+        try:
+            conn_l5 = get_db()
+            cur_l5 = conn_l5.cursor(dictionary=True)
+            cur_l5.execute("SELECT loan_amount, loan_type, tenure_months, custom_fields FROM applications WHERE id=%s", (app_id,))
+            app_row = cur_l5.fetchone()
+            if app_row and app_row.get('loan_amount'):
+                requested_amount = float(app_row['loan_amount'])
+
+            # Fetch all officer-flagged issues for this case
+            cur_l5.execute("""
+                SELECT title, severity, description, checkpoint
+                FROM hitl_issues WHERE case_id=%s
+                ORDER BY severity DESC, checkpoint ASC
+            """, (case_id,))
+            issues = cur_l5.fetchall()
+            if issues:
+                issue_lines = []
+                for iss in issues:
+                    issue_lines.append(f"- [{iss['severity']}] {iss['title']}: {iss.get('description', '')}")
+                officer_issues_context = "\n\nOFFICER-FLAGGED ISSUES (must factor into risk assessment):\n" + "\n".join(issue_lines)
+
+            # Fetch custom fields
+            if app_row and app_row.get('custom_fields'):
+                try:
+                    cf = json.loads(app_row['custom_fields']) if isinstance(app_row['custom_fields'], str) else app_row['custom_fields']
+                    if cf:
+                        cf_lines = [f"- {k}: {v.get('value', v) if isinstance(v, dict) else v}" for k, v in cf.items()]
+                        custom_fields_context = "\n\nOFFICER-ADDED CUSTOM DATA FIELDS:\n" + "\n".join(cf_lines)
+                except:
+                    pass
+
+            cur_l5.close()
+            conn_l5.close()
+        except Exception as l5_fetch_err:
+            print(f"Non-fatal: Could not fetch onboarding data for L5: {l5_fetch_err}")
+
         def l5_progress(msg, pct):
             socketio.emit('layer_progress', {"layer": 5, "name": "Risk Scoring",
                           "status": "processing", "pct": pct, "detail": msg},
@@ -1604,10 +2057,11 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
             e = threading.Event()
             _layer5_events[app_id] = {"e1": e, "d1": {}}
             
-            # Emit to frontend
+            # Emit to frontend (include officer issues)
             socketio.emit('layer5_hitl_reject', {
                 "app_id": app_id,
-                "hard_rules": hard_rules_result
+                "hard_rules": hard_rules_result,
+                "officer_issues": officer_issues_context,
             }, room=f'app_{app_id}')
             
             # Wait for decision
@@ -1617,16 +2071,29 @@ def _run_pipeline_layer2_onwards(app_id, case_id, company_name, filepaths, offic
             data = _layer5_events[app_id].get("d1", {})
             return data
 
+        # Inject officer context into the layer2 data so the LLM can see it
+        l2_data_for_l5 = l2_data if 'l2_data' in dir() else {}
+        if officer_issues_context or custom_fields_context:
+            if isinstance(l2_data_for_l5, dict):
+                l2_data_for_l5 = dict(l2_data_for_l5)  # shallow copy
+                l2_data_for_l5['_officer_issues'] = officer_issues_context
+                l2_data_for_l5['_custom_fields_context'] = custom_fields_context
+
         layer5_result = run_layer5(
             layer4_output=layer4_result if 'layer4_result' in dir() else {},
-            layer2_data=l2_data if 'l2_data' in dir() else {},
+            layer2_data=l2_data_for_l5,
             company_name=company_name,
             case_id=case_id,
-            requested_amount_lakhs=75.0,
+            requested_amount_lakhs=requested_amount,
             progress_callback=l5_progress,
             hitl_callback=l5_hitl_reject,
         )
 
+        # Inject pipeline timing into layer5 output
+        layer5_result['pipeline_timing'] = {
+            'total_seconds': round(time.time() - _pipeline_start_time, 2),
+            'completed_at': datetime.utcnow().isoformat() + 'Z',
+        }
         layer5_json = json.dumps(layer5_result, indent=2, default=str)
 
         # Save to DB
@@ -1728,7 +2195,8 @@ Identified Risks / Safety Measures:
 
 Format the output cleanly in plain text or simple markdown. Be professional, concise, and definitive."""
 
-                    client = Groq(api_key=os.getenv("API_KEY"))
+                    from utils_keys import get_content_generation_key
+                    client = Groq(api_key=get_content_generation_key())
                     response = client.chat.completions.create(
                         model="meta-llama/llama-4-scout-17b-16e-instruct",
                         messages=[
@@ -1756,10 +2224,27 @@ Format the output cleanly in plain text or simple markdown. Be professional, con
             if amount_changed or rate_changed:
                 try:
                     from layer5.step10_loan_structure import compute_loan_structure
-                    l2_parsed = json.loads(output_json) if isinstance(output_json, str) else output_json
+                    # Fetch layer2_output from DB (output_json may not be in scope here)
+                    conn_l2 = get_db()
+                    cur_l2 = conn_l2.cursor(dictionary=True)
+                    cur_l2.execute("SELECT layer2_output FROM applications WHERE id=%s", (app_id,))
+                    l2_row = cur_l2.fetchone()
+                    cur_l2.close()
+                    conn_l2.close()
+                    l2_raw = l2_row.get('layer2_output', '{}') if l2_row else '{}'
+                    l2_parsed = json.loads(l2_raw) if isinstance(l2_raw, str) else (l2_raw or {})
                     l2 = l2_parsed.get('extracted', {}).get('financial_data', {}) or l2_parsed
                     features = layer5_result.get("validation", {}).get("validated_features", {})
                     conditions = layer5_result.get("decision_summary", {}).get("conditions", [])
+                    # Sanitize conditions: ensure cap_multiplier values are float-compatible
+                    for cond in conditions:
+                        if isinstance(cond, dict):
+                            cm = cond.get("cap_multiplier")
+                            if cm is not None and not isinstance(cm, (int, float)):
+                                try:
+                                    cond["cap_multiplier"] = float(cm)
+                                except (ValueError, TypeError):
+                                    cond["cap_multiplier"] = 1.0
                     new_amt = float(layer5_result["decision_summary"]["sanction_amount_lakhs"])
                     new_rate = float(layer5_result["decision_summary"]["interest_rate"])
                     
@@ -1823,7 +2308,7 @@ Format the output cleanly in plain text or simple markdown. Be professional, con
         l4_parsed = layer4_result if 'layer4_result' in dir() else {}
         l5_parsed = layer5_result if 'layer5_result' in dir() else {}
 
-        cam_dir = os.path.join(app.config['UPLOAD_FOLDER'], f"cam_{app_id}")
+        cam_dir = __import__('os').path.join(app.config['UPLOAD_FOLDER'], f"cam_{app_id}")
         cam_result = generate_cam_report(app_data, l2_parsed, l3_parsed, l4_parsed, l5_parsed, cam_dir)
 
         socketio.emit('layer_progress', {"layer": 7, "name": "CAM Report Generation", "status": "processing", "pct": 70,
@@ -2055,8 +2540,9 @@ Evaluate the risks of this override. Provide EXACTLY 3-4 bullet points in plain 
 """
     try:
         from groq import Groq
+        from utils_keys import get_content_generation_key
         client = Groq(
-            api_key=os.getenv("API_KEY")
+            api_key=get_content_generation_key()
         )
         response = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
@@ -2497,6 +2983,75 @@ def layer8_dashboard_data():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/layer8/analytics')
+@login_required
+def layer8_analytics():
+    """Return accuracy & system analytics for the Layer 8 dashboard."""
+    try:
+        from layer8.analytics import compute_analytics
+        conn = get_db()
+        cur = conn.cursor(dictionary=True)
+
+        # Fetch all completed applications
+        cur.execute("""
+            SELECT case_id, company_name, layer2_output, layer5_output,
+                   created_at, completed_at
+            FROM applications
+            WHERE layer5_output IS NOT NULL
+            ORDER BY created_at DESC
+        """)
+        apps = cur.fetchall()
+
+        # Fetch relevant audit logs for HITL tracking
+        cur.execute("""
+            SELECT target AS case_id, action, details
+            FROM audit_logs
+            WHERE action IN ('HITL_CONFIRM','HITL_ADD_CUSTOM_FIELD','L4_HITL_3')
+            ORDER BY timestamp
+        """)
+        logs = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        metrics = compute_analytics(apps, logs)
+        return jsonify(metrics)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/layer8/case/<case_id>')
+@login_required
+def layer8_case_detail(case_id):
+    """Per-case accuracy detail."""
+    try:
+        from layer8.analytics import compute_case_analytics
+        conn = get_db()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("""
+            SELECT case_id, company_name, layer2_output, layer5_output,
+                   created_at, completed_at
+            FROM applications WHERE case_id=%s
+        """, (case_id,))
+        app = cur.fetchone()
+        if not app:
+            return jsonify({"error": "Case not found"}), 404
+
+        cur.execute("""
+            SELECT target AS case_id, action, details
+            FROM audit_logs WHERE target=%s
+        """, (case_id,))
+        logs = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        return jsonify(compute_case_analytics(app, logs))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/layer8/generate-metrics', methods=['POST'])
 @login_required
 def layer8_generate_metrics():
@@ -2652,10 +3207,188 @@ def layer8_retention_policy():
         return jsonify({"error": str(e)}), 500
 
 
+# ─── Streaming Chat API (Self-Explainability) ─────────────────────────────────
+_chat_sessions = {}  # {app_id: [{"role": "...", "content": "..."}]}
+
+
+@app.route('/api/chat', methods=['POST'])
+@login_required
+def chat_with_application():
+    """
+    Streaming chat endpoint. Accepts:
+      { app_id: int, message: str }
+    Returns SSE stream of LLM response chunks with conversation memory.
+    """
+    import os as _os
+    data = request.get_json(force=True) or {}
+    app_id = data.get('app_id')
+    user_msg = data.get('message', '').strip()
+
+    if not app_id or not user_msg:
+        return jsonify({"error": "app_id and message are required"}), 400
+
+    # Retrieve application context from DB
+    conn = get_db()
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute("SELECT layer5_output FROM applications WHERE id=%s", (app_id,))
+        row = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    if not row or not row.get('layer5_output'):
+        return jsonify({"error": "No processed data found for this application"}), 404
+
+    l5_output = row['layer5_output']
+    if isinstance(l5_output, str):
+        try:
+            l5_output = json.loads(l5_output)
+        except Exception:
+            l5_output = {}
+
+    # Build system prompt with full application context
+    decision_summary = l5_output.get('decision_summary', {})
+    audit_trail = l5_output.get('decision_audit_trail', {})
+    explanation = l5_output.get('explanation', {})
+    score_breakdown = l5_output.get('score_breakdown', {})
+    pricing = l5_output.get('pricing', {})
+    fusion_narrative = l5_output.get('fusion_narrative', '')
+
+    # Extract HITL override / loan structure context
+    loan_info = l5_output.get('loan', l5_output.get('loan_structure', {}))
+    if isinstance(loan_info, str):
+        try: loan_info = json.loads(loan_info)
+        except: loan_info = {}
+    loan_structure = loan_info.get('loan_structure', {}) if isinstance(loan_info, dict) else {}
+    hitl_override_note = loan_info.get('hitl_override_note', '') if isinstance(loan_info, dict) else ''
+    mpbf = loan_info.get('mpbf', {}) if isinstance(loan_info, dict) else {}
+    limits = loan_info.get('limits', {}) if isinstance(loan_info, dict) else {}
+    binding_constraint = loan_info.get('binding_constraint', 'N/A') if isinstance(loan_info, dict) else 'N/A'
+
+    system_prompt = f"""You are the Intelli-Credit AI Assistant. You have complete knowledge of this loan application and must answer any question about it clearly and precisely.
+
+APPLICATION CONTEXT:
+Decision: {decision_summary.get('decision', 'N/A')}
+Credit Score: {decision_summary.get('final_credit_score', 'N/A')} ({decision_summary.get('risk_band', 'N/A')})
+Probability of Default: {decision_summary.get('probability_of_default', 'N/A')}
+Interest Rate: {decision_summary.get('interest_rate', 'N/A')}%
+Sanction Amount: Rs.{decision_summary.get('sanction_amount_lakhs', 'N/A')} Lakhs
+
+LOAN STRUCTURE:
+Term Loan: {json.dumps(loan_structure.get('term_loan', {}), default=str)}
+Working Capital: {json.dumps(loan_structure.get('working_capital', {}), default=str)}
+Total Sanctioned: {loan_structure.get('total_sanctioned_lakhs', 'N/A')} Lakhs
+
+LOAN LIMITS (Multi-Method Assessment):
+{json.dumps(limits, indent=2, default=str)}
+Binding Constraint: {binding_constraint}
+
+MPBF (Nayak Committee Method II):
+{json.dumps(mpbf, indent=2, default=str)}
+
+HUMAN OFFICER OVERRIDE:
+{hitl_override_note if hitl_override_note else 'No officer override was applied.'}
+
+SCORE JOURNEY:
+{audit_trail.get('score_journey', fusion_narrative)}
+
+PRICING BREAKDOWN:
+{audit_trail.get('pricing_explanation', json.dumps(pricing, default=str))}
+
+KEY DRIVERS:
+{json.dumps(audit_trail.get('key_drivers', []), indent=2)}
+
+HARD RULES: {audit_trail.get('hard_rules_summary', 'N/A')}
+ESG IMPACT: {audit_trail.get('esg_impact', 'N/A')}
+STATUTORY CHECK: {audit_trail.get('statutory_check', 'N/A')}
+
+LLM QUALITATIVE OPINION:
+{explanation.get('llm_opinion', 'N/A')}
+
+FIVE Cs ASSESSMENT:
+{json.dumps(explanation.get('five_cs', {}), indent=2, default=str)}
+
+BIGGEST RISK: {explanation.get('biggest_risk', 'N/A')}
+BIGGEST STRENGTH: {explanation.get('biggest_strength', 'N/A')}
+LLM ADJUSTMENT: {explanation.get('llm_adjustment', 0)} ({explanation.get('llm_justification', '')})
+
+CONDITIONS: {json.dumps(decision_summary.get('conditions', []), default=str)}
+COVENANTS: {json.dumps(decision_summary.get('covenants', []), default=str)}
+
+GREEN FINANCING: {json.dumps(decision_summary.get('green_financing', {}), default=str)}
+
+DECISION REASON: {audit_trail.get('decision_reason', 'N/A')}
+
+INSTRUCTIONS:
+- Answer questions about this specific application only.
+- Explain WHY decisions were made using the data above.
+- When asked about human overrides, reference the HUMAN OFFICER OVERRIDE section and compare with original AI recommendation.
+- Use simple, professional language a credit officer can understand.
+- If asked about something not in the data, say so clearly.
+- Be concise but thorough.
+- Format your response using markdown: **bold** for key terms, bullet lists for multiple points.
+"""
+
+    # Initialise or retrieve conversation memory for this app_id
+    session_key = str(app_id)
+    if session_key not in _chat_sessions:
+        _chat_sessions[session_key] = [{"role": "system", "content": system_prompt}]
+
+    # Add user message to history
+    _chat_sessions[session_key].append({"role": "user", "content": user_msg})
+
+    # Keep conversation history manageable (last 20 messages + system)
+    if len(_chat_sessions[session_key]) > 21:
+        _chat_sessions[session_key] = [_chat_sessions[session_key][0]] + _chat_sessions[session_key][-20:]
+
+    def generate_stream():
+        full_response = ""
+        try:
+            from groq import Groq
+            from utils_keys import get_chatbot_key
+            client = Groq(api_key=get_chatbot_key())
+            stream = client.chat.completions.create(
+                messages=_chat_sessions[session_key],
+                model="meta-llama/llama-4-scout-17b-16e-instruct",
+                temperature=0.4,
+                max_tokens=2000,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    full_response += delta.content
+                    yield f"data: {json.dumps({'content': delta.content})}\n\n"
+
+            # Save assistant response to memory
+            _chat_sessions[session_key].append({"role": "assistant", "content": full_response})
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+        except Exception as e:
+            error_msg = f"Chat error: {str(e)}"
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+
+    return app.response_class(generate_stream(), mimetype='text/event-stream')
+
+
+@app.route('/api/chat/clear', methods=['POST'])
+@login_required
+def clear_chat_session():
+    """Clear chat history for an application."""
+    data = request.get_json(force=True) or {}
+    app_id = str(data.get('app_id', ''))
+    if app_id in _chat_sessions:
+        del _chat_sessions[app_id]
+    return jsonify({"status": "cleared"})
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     init_database()
     print("🚀 Intelli-Credit Engine starting on http://localhost:5000")
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        wb.open("http://localhost:5000")
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
 

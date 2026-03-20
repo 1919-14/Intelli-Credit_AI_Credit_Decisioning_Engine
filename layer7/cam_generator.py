@@ -66,7 +66,7 @@ def _add_table_row(table, cells, bold=False, bg_color=None):
 # ─── CAM Generator Class ────────────────────────────────────────────────────
 
 class CAMGenerator:
-    """Generate a full 13-section RBI-compliant Credit Appraisal Memorandum."""
+    """Generate a full 14-section RBI-compliant Credit Appraisal Memorandum."""
 
     def __init__(self, app_data, l2_data, l3_data, l4_data, l5_data):
         self.app = app_data
@@ -87,22 +87,41 @@ class CAMGenerator:
         self.loan = self.l5.get('loan_structure', {})
         self.pricing = self.l5.get('pricing', {})
 
+        # Officer-added HITL issues & custom fields
+        self.officer_issues = app_data.get('officer_issues', [])
+        self.custom_fields = app_data.get('custom_fields', {})
+        if isinstance(self.custom_fields, str):
+            try:
+                self.custom_fields = json.loads(self.custom_fields)
+            except:
+                self.custom_fields = {}
+
     def generate(self, output_path):
         """Generate the full CAM DOCX document."""
         self._setup_styles()
         self._section_1_cover()
         self._section_2_executive_summary()
         self._section_3_borrower_profile()
+        self._section_3b_shareholding_pattern()
+        try:
+            self._section_3c_statutory_compliance()
+        except Exception as e:
+            print(f"  [CAM] Section 3C Statutory Compliance skipped: {e}")
         self._section_4_loan_proposal()
         self._section_5_financial_analysis()
         self._section_6_existing_debt()
         self._section_7_security_collateral()
         self._section_8_sector_risk()
+        try:
+            self._section_8b_esg_risk()
+        except Exception as e:
+            print(f"  [CAM] Section 8B ESG Risk skipped: {e}")
         self._section_9_ai_risk_score()
         self._section_10_forensic_alerts()
         self._section_11_five_cs()
         self._section_12_swot()
-        self._section_13_recommendations()
+        self._section_13_officer_issues()
+        self._section_14_recommendations()
         self._appendix_a_evidence()
 
         # Compute hash and embed in metadata
@@ -113,7 +132,7 @@ class CAMGenerator:
         return {
             'path': output_path,
             'cam_hash': cam_hash,
-            'sections': 13,
+            'sections': 14,
             'timestamp': datetime.utcnow().isoformat()
         }
 
@@ -243,6 +262,40 @@ class CAMGenerator:
         self.doc.add_paragraph()
         self.cam_content_text += f"EXEC: {company} | Score: {score} | Decision: {decision}\n"
 
+    # ─── Section 3B: Shareholding Pattern ──────────────────────────────
+
+    def _section_3b_shareholding_pattern(self):
+        _add_heading(self.doc, '3. SHAREHOLDING PATTERN & OWNERSHIP', level=1)
+        
+        table = self.doc.add_table(rows=0, cols=2)
+        table.style = 'Table Grid'
+        
+        # Breakdown
+        _add_table_row(table, ['Promoter Holding (%)', _safe(self.extracted.get('promoter_holding_pct'))])
+        _add_table_row(table, ['Public Holding (%)', _safe(self.extracted.get('public_holding_pct'))])
+        _add_table_row(table, ['Institutional Holding (%)', _safe(self.extracted.get('institutional_holding_pct'))])
+        _add_table_row(table, ['Foreign Holding (%)', _safe(self.extracted.get('foreign_holding_pct'))])
+        _add_table_row(table, ['Pledged Shares (%)', _safe(self.extracted.get('pledged_shares_pct'))], bold=True, bg_color='fdf2f8')
+        _add_table_row(table, ['As of Date / Period', _safe(self.extracted.get('shareholding_period'))])
+        
+        self.doc.add_paragraph()
+        
+        # Top Shareholders list if available
+        top_holders = self.extracted.get('top_shareholders', [])
+        if top_holders and isinstance(top_holders, list):
+            _add_heading(self.doc, 'Top Shareholders', level=2)
+            t2 = self.doc.add_table(rows=1, cols=2)
+            t2.style = 'Table Grid'
+            t2.rows[0].cells[0].text = 'Shareholder Name'
+            t2.rows[0].cells[1].text = 'Holding (%)'
+            for h in top_holders:
+                if isinstance(h, dict):
+                    _add_table_row(t2, [h.get('name', '—'), h.get('percentage', '—')])
+                else:
+                    _add_table_row(t2, [str(h), '—'])
+                    
+        self.doc.add_paragraph()
+
     # ─── Section 3: Borrower & Group Profile ───────────────────────
 
     def _section_3_borrower_profile(self):
@@ -308,7 +361,10 @@ class CAMGenerator:
 
         tl = loan_struct.get('term_loan', {})
         wc = loan_struct.get('working_capital', {})
+        # Show the requested loan amount from onboarding
+        requested_amt = self.app.get('loan_amount', self.app.get('requested_amount', None))
         rows = [
+            ('Requested Loan Amount', f"₹{requested_amt} Lakhs" if requested_amt else '—'),
             ('Facility Type', 'Term Loan & Cash Credit'),
             ('Term Loan Amount', f"₹{tl.get('amount_lakhs', '—')} Lakhs"),
             ('Working Capital Amount', f"₹{wc.get('amount_lakhs', '—')} Lakhs"),
@@ -354,24 +410,35 @@ class CAMGenerator:
     def _section_5_financial_analysis(self):
         _add_heading(self.doc, '4. FINANCIAL ANALYSIS', level=1)
 
-        # 3-Year Financial table
+        # Determine financial year from extracted data
+        fy_label = _safe(self.extracted.get('financial_year'),
+                         _safe(self.extracted.get('fs_financial_year'), None))
+        # Try to build a year label like 'FY24'; fallback to the application year
+        if not fy_label:
+            app_year = self.app.get('financial_year', '')
+            if app_year:
+                fy_label = f"FY{str(app_year)[-2:]}" if len(str(app_year)) >= 4 else f"FY{app_year}"
+            else:
+                fy_label = 'Current FY'
+
+        # Financial Summary table — single year (data from submitted documents)
         _add_heading(self.doc, 'Financial Summary', level=2)
-        table = self.doc.add_table(rows=1, cols=4)
+        table = self.doc.add_table(rows=1, cols=2)
         table.style = 'Table Grid'
-        hdrs = ['Metric', 'FY22', 'FY23', 'FY24']
+        hdrs = ['Metric', str(fy_label)]
         for i, h in enumerate(hdrs):
             table.rows[0].cells[i].text = h
 
         rev = _safe(self.extracted.get('total_revenue'), _safe(self.extracted.get('revenue_from_operations'), '—'))
         metrics = [
-            ('Revenue', rev, '—', '—'),
-            ('EBITDA', _safe(self.extracted.get('ebitda'), '—'), '—', '—'),
-            ('PAT', _safe(self.extracted.get('profit_after_tax'), '—'), '—', '—'),
-            ('Net Worth', _safe(self.extracted.get('net_worth'), '—'), '—', '—'),
-            ('Total Debt', _safe(self.extracted.get('total_debt'), '—'), '—', '—'),
+            ('Revenue', rev),
+            ('EBITDA', _safe(self.extracted.get('ebitda'), '—')),
+            ('PAT', _safe(self.extracted.get('profit_after_tax'), '—')),
+            ('Net Worth', _safe(self.extracted.get('net_worth'), '—')),
+            ('Total Debt', _safe(self.extracted.get('total_debt'), '—')),
         ]
-        for vals in metrics:
-            _add_table_row(table, [vals[0], _fmt_inr(vals[1]), _fmt_inr(vals[2]) if vals[2] != '—' else '—', _fmt_inr(vals[3]) if vals[3] != '—' else '—'])
+        for metric_name, metric_val in metrics:
+            _add_table_row(table, [metric_name, _fmt_inr(metric_val)])
 
         # Key Ratios
         _add_heading(self.doc, 'Key Financial Ratios', level=2)
@@ -522,6 +589,119 @@ class CAMGenerator:
         self.doc.add_paragraph()
         self.cam_content_text += "SECTOR_RISK completed\n"
 
+    # ─── Section 8B: ESG Risk & Climate Analysis ─────────────────────
+
+    def _section_8b_esg_risk(self):
+        _add_heading(self.doc, '8B. ESG RISK & CLIMATE ANALYSIS', level=1)
+
+        table = self.doc.add_table(rows=0, cols=2)
+        table.style = 'Table Grid'
+        _add_table_row(table, ['Transition Risk', _safe(self.extracted.get('esg_transition_risk'))], bold=True)
+        _add_table_row(table, ['Physical Risk', _safe(self.extracted.get('esg_physical_risk'))])
+        _add_table_row(table, ['Carbon Footprint (MT CO₂e)', _safe(self.extracted.get('carbon_footprint_mt'))])
+        _add_table_row(table, ['Scope 1 Emissions', _safe(self.extracted.get('scope1_emissions'))])
+        _add_table_row(table, ['Scope 2 Emissions', _safe(self.extracted.get('scope2_emissions'))])
+        _add_table_row(table, ['Scope 3 Emissions', _safe(self.extracted.get('scope3_emissions'))])
+        _add_table_row(table, ['Sustainability Rating', _safe(self.extracted.get('sustainability_rating'))])
+        _add_table_row(table, ['Rating Agency', _safe(self.extracted.get('sustainability_rating_agency'))])
+        _add_table_row(table, ['Renewable Energy (%)', _safe(self.extracted.get('renewable_energy_pct'))])
+        _add_table_row(table, ['Waste Recycled (%)', _safe(self.extracted.get('waste_recycled_pct'))])
+        _add_table_row(table, ['Report Period', _safe(self.extracted.get('esg_report_period'))])
+
+        # Green Financing eligibility callout
+        green_eligible = self.extracted.get('green_financing_eligible')
+        if green_eligible is True or str(green_eligible).lower() == 'true':
+            self.doc.add_paragraph()
+            p = self.doc.add_paragraph()
+            run = p.add_run('✅ GREEN FINANCING ELIGIBLE — ')
+            run.bold = True
+            run.font.color.rgb = RGBColor(0x05, 0x96, 0x69)
+            p.add_run(
+                'Based on the sustainability metrics extracted from the Climate/ESG Report, '
+                'this borrower qualifies for a Green Loan product with a recommended interest '
+                'rate discount of 0.25% – 0.50%. This is in line with RBI Sustainable Finance Framework '
+                'and Green Bond Principles.'
+            )
+        else:
+            self.doc.add_paragraph(
+                'Green Financing eligibility was not established from the submitted reports, '
+                'or no ESG/Climate report was provided.'
+            )
+
+        # Key ESG risks
+        esg_risks = self.extracted.get('esg_key_risks', [])
+        if esg_risks and isinstance(esg_risks, list):
+            _add_heading(self.doc, 'Key ESG Risks Identified', level=2)
+            for risk in esg_risks:
+                self.doc.add_paragraph(f"• {risk}", style='List Bullet')
+
+        self.doc.add_paragraph()
+        self.cam_content_text += "ESG_RISK completed\n"
+
+    # ─── Section 3C: Statutory Compliance (Annual Return) ──────────
+
+    def _section_3c_statutory_compliance(self):
+        _add_heading(self.doc, '3C. STATUTORY COMPLIANCE & OWNERSHIP VERIFICATION', level=1)
+
+        filed = self.extracted.get('annual_return_filed')
+        table = self.doc.add_table(rows=0, cols=2)
+        table.style = 'Table Grid'
+
+        # Highlight non-filing as critical risk
+        filed_text = '✅ Filed' if (filed is True or str(filed).lower() == 'true') else '⚠️ Not Filed / Unknown'
+        _add_table_row(table, ['Annual Return Filed', filed_text],
+                       bold=True,
+                       bg_color='f0fdf4' if 'Filed' in filed_text else 'fef2f2')
+        _add_table_row(table, ['Filing Date', _safe(self.extracted.get('annual_return_filing_date'))])
+        _add_table_row(table, ['Return Year', _safe(self.extracted.get('annual_return_year'))])
+        _add_table_row(table, ['Registered Office', _safe(self.extracted.get('registered_office_address'))])
+        _add_table_row(table, ['MCA Company Status', _safe(self.extracted.get('mca_company_status'))])
+        _add_table_row(table, ['Total Directors', _safe(self.extracted.get('total_directors_count'))])
+        _add_table_row(table, ['Independent Directors', _safe(self.extracted.get('independent_directors_count'))])
+        _add_table_row(table, ['Charges Registered', _safe(self.extracted.get('charges_registered'))])
+        _add_table_row(table, ['Declared Paid-up Capital', _safe(self.extracted.get('declared_paid_up_capital'))])
+        _add_table_row(table, ['Declared Reserves', _safe(self.extracted.get('declared_reserves'))])
+
+        # Indebtedness cross-check
+        declared = self.extracted.get('declared_indebtedness')
+        financial = self.extracted.get('total_outstanding_borrowings')
+        _add_table_row(table, ['Declared Indebtedness (Annual Return)', _safe(declared)], bold=True)
+        _add_table_row(table, ['Total Borrowings (Financial Statements)', _safe(financial)])
+
+        if declared and financial:
+            try:
+                d = float(declared)
+                f_val = float(financial)
+                if f_val > 0:
+                    mismatch_pct = abs(d - f_val) / f_val * 100
+                    if mismatch_pct > 5:
+                        p = self.doc.add_paragraph()
+                        run = p.add_run(f'⚠️ CROSS-CHECK ALERT: {mismatch_pct:.1f}% mismatch between declared indebtedness '
+                                       f'and financial statement borrowings. Manual verification required.')
+                        run.bold = True
+                        run.font.color.rgb = RGBColor(0xDC, 0x26, 0x26)
+                    else:
+                        self.doc.add_paragraph('✅ Declared indebtedness matches financial statements within 5% tolerance.')
+            except (ValueError, TypeError):
+                pass
+
+        # Directors list
+        directors = self.extracted.get('active_directors_list', [])
+        if directors and isinstance(directors, list):
+            _add_heading(self.doc, 'Active Directors (As per Annual Return)', level=2)
+            for i, name in enumerate(directors, 1):
+                self.doc.add_paragraph(f"{i}. {name}")
+
+        # Compliance flags
+        flags = self.extracted.get('statutory_compliance_flags', [])
+        if flags and isinstance(flags, list):
+            _add_heading(self.doc, 'Compliance Flags', level=2)
+            for flag in flags:
+                self.doc.add_paragraph(f"⚠ {flag}", style='List Bullet')
+
+        self.doc.add_paragraph()
+        self.cam_content_text += "STATUTORY_COMPLIANCE completed\n"
+
     # ─── Section 9: AI Risk Score & Explainability ─────────────────
 
     def _section_9_ai_risk_score(self):
@@ -666,10 +846,95 @@ class CAMGenerator:
         self.doc.add_paragraph()
         self.cam_content_text += "SWOT completed\n"
 
-    # ─── Section 13: Recommendations & Approvals ───────────────────
+    # ─── Section 13: Officer-Flagged Issues & Custom Fields ────────
 
-    def _section_13_recommendations(self):
-        _add_heading(self.doc, '12. RECOMMENDATIONS & APPROVALS', level=1)
+    def _section_13_officer_issues(self):
+        _add_heading(self.doc, '12. OFFICER-FLAGGED ISSUES & CUSTOM DATA', level=1)
+
+        p = self.doc.add_paragraph()
+        run = p.add_run('(HITL-originated observations not captured by AI pipeline)')
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+        # ── Officer Issues ──
+        issues = self.officer_issues
+        if issues:
+            _add_heading(self.doc, 'Officer-Flagged Issues', level=2)
+            table = self.doc.add_table(rows=1, cols=4)
+            table.style = 'Table Grid'
+            for i, h in enumerate(['Issue Title', 'Severity', 'Description', 'Checkpoint']):
+                table.rows[0].cells[i].text = h
+
+            for issue in issues:
+                sev = issue.get('severity', 'MEDIUM')
+                bg = None
+                if sev == 'CRITICAL': bg = 'FFCCCC'
+                elif sev == 'HIGH': bg = 'FFE0CC'
+                elif sev == 'MEDIUM': bg = 'FFF3CD'
+
+                _add_table_row(table, [
+                    issue.get('title', '—'),
+                    sev,
+                    issue.get('description', '—')[:120],
+                    f"HITL-{issue.get('checkpoint', '?')}"
+                ], bg_color=bg)
+
+            # Impact statement
+            critical_count = sum(1 for i in issues if i.get('severity') in ('CRITICAL', 'HIGH'))
+            if critical_count > 0:
+                self.doc.add_paragraph()
+                p = self.doc.add_paragraph()
+                run = p.add_run(f'⚠️ Impact: {critical_count} HIGH/CRITICAL issue(s) flagged by officer — '
+                                f'these have been factored into the AI risk scoring and final decision.')
+                run.bold = True
+                run.font.color.rgb = RGBColor(0xcc, 0x33, 0x00)
+        else:
+            self.doc.add_paragraph('No officer-flagged issues were raised during the HITL review process.')
+
+        # ── Custom Data Fields ──
+        custom = self.custom_fields
+        if custom and isinstance(custom, dict) and len(custom) > 0:
+            _add_heading(self.doc, 'Officer-Added Custom Data Fields', level=2)
+            ct = self.doc.add_table(rows=1, cols=2)
+            ct.style = 'Table Grid'
+            ct.rows[0].cells[0].text = 'Field Name'
+            ct.rows[0].cells[1].text = 'Value'
+            for field_name, field_value in custom.items():
+                _add_table_row(ct, [str(field_name).replace('_', ' ').title(), str(field_value)])
+
+            self.doc.add_paragraph()
+            p = self.doc.add_paragraph()
+            run = p.add_run(f'{len(custom)} custom data field(s) were added by the reviewing officer '
+                            f'and have been incorporated into the pipeline context.')
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(0x33, 0x66, 0x99)
+        else:
+            self.doc.add_paragraph('No custom data fields were added during the review process.')
+
+        # ── GST Cross-Validation Summary ──
+        gstin_mismatches = self.app.get('gstin_mismatch_fields')
+        if gstin_mismatches:
+            if isinstance(gstin_mismatches, str):
+                try:
+                    gstin_mismatches = json.loads(gstin_mismatches)
+                except:
+                    gstin_mismatches = None
+        if gstin_mismatches and isinstance(gstin_mismatches, list) and len(gstin_mismatches) > 0:
+            _add_heading(self.doc, 'GST Cross-Validation Discrepancies', level=2)
+            for mismatch in gstin_mismatches:
+                self.doc.add_paragraph(
+                    f"• {mismatch.get('field', '—')}: Official='{mismatch.get('official', '—')}' "
+                    f"vs Extracted='{mismatch.get('extracted', '—')}'",
+                    style='List Bullet'
+                )
+
+        self.doc.add_paragraph()
+        self.cam_content_text += f"OFFICER_ISSUES: {len(issues)} issues, {len(custom)} custom fields\n"
+
+    # ─── Section 14: Recommendations & Approvals ───────────────────
+
+    def _section_14_recommendations(self):
+        _add_heading(self.doc, '13. RECOMMENDATIONS & APPROVALS', level=1)
 
         table = self.doc.add_table(rows=0, cols=2)
         table.style = 'Table Grid'
@@ -684,6 +949,44 @@ class CAMGenerator:
             _add_heading(self.doc, 'Sanction Conditions', level=2)
             for c in conditions:
                 self.doc.add_paragraph(f"• {c}", style='List Bullet')
+
+        # Loan Amount Validation & Explainability
+        requested = self.app.get('loan_amount')
+        sanctioned = self.decision.get('sanction_amount_lakhs')
+        if requested or sanctioned:
+            _add_heading(self.doc, 'Loan Amount Validation & Rationale', level=2)
+            la_table = self.doc.add_table(rows=0, cols=2)
+            la_table.style = 'Table Grid'
+            _add_table_row(la_table, ['Requested Amount', f"₹{requested} Lakhs" if requested else '—'])
+            _add_table_row(la_table, ['Sanctioned Amount', f"₹{sanctioned} Lakhs" if sanctioned else '—'])
+
+            loan_analysis = self.l5.get('loan_amount_analysis', '')
+            if loan_analysis:
+                self.doc.add_paragraph()
+                p = self.doc.add_paragraph()
+                run = p.add_run('AI Loan Amount Analysis: ')
+                run.bold = True
+                run.font.size = Pt(10)
+                p.add_run(str(loan_analysis))
+            elif requested and sanctioned:
+                try:
+                    req_f = float(requested)
+                    sanc_f = float(sanctioned)
+                    diff_pct = ((sanc_f - req_f) / req_f * 100) if req_f else 0
+                    if abs(diff_pct) < 5:
+                        rationale = (f"The sanctioned amount (₹{sanc_f} L) closely matches the requested amount "
+                                     f"(₹{req_f} L), indicating the borrower's financial profile supports the request.")
+                    elif diff_pct < -5:
+                        rationale = (f"The sanctioned amount (₹{sanc_f} L) is {abs(diff_pct):.0f}% lower than requested "
+                                     f"(₹{req_f} L). This reduction is based on the borrower's debt servicing capacity, "
+                                     f"existing leverage, and risk profile as assessed by the AI model.")
+                    else:
+                        rationale = (f"The AI model suggests the borrower can service up to ₹{sanc_f} L, which is "
+                                     f"{diff_pct:.0f}% higher than requested (₹{req_f} L). The borrower's strong "
+                                     f"financial indicators support a higher facility.")
+                    self.doc.add_paragraph(rationale)
+                except (ValueError, TypeError):
+                    pass
 
         # Deviation tracking
         _add_heading(self.doc, 'Deviation Tracking', level=2)
@@ -803,6 +1106,9 @@ def generate_audit_json(app_data, l2_data, l3_data, l4_data, l5_data):
     features = l4_data.get('feature_vector', {})
     snapshot = l5_data.get('audit_snapshot', {})
 
+    officer_issues = app_data.get('officer_issues', [])
+    custom_fields = app_data.get('custom_fields', {})
+
     audit = {
         'case_id': app_data.get('case_id'),
         'timestamp': datetime.utcnow().isoformat(),
@@ -813,15 +1119,21 @@ def generate_audit_json(app_data, l2_data, l3_data, l4_data, l5_data):
         'final_decision': decision.get('decision'),
         'interest_rate': decision.get('interest_rate'),
         'sanction_amount_lakhs': decision.get('sanction_amount_lakhs'),
+        'requested_amount_lakhs': app_data.get('loan_amount'),
         'five_cs': {k: {'rating': v.get('rating')} for k, v in five_cs.items()},
         'forensics_summary': {
             'red_flags': forensics.get('red_flag_count', 0),
             'amber_flags': forensics.get('amber_flag_count', 0),
             'total_penalty': forensics.get('total_score_penalty', 0),
         },
+        'officer_issues': [
+            {'title': i.get('title'), 'severity': i.get('severity')}
+            for i in officer_issues
+        ] if officer_issues else [],
+        'custom_fields_count': len(custom_fields) if isinstance(custom_fields, dict) else 0,
         'feature_count': len(features),
         'cam_hash': hashlib.sha256(json.dumps(decision, default=str).encode()).hexdigest(),
         'model_version': snapshot.get('model_metadata', {}).get('model_version', 'v4.3'),
-        'schema_version': '1.0.0',
+        'schema_version': '1.1.0',
     }
     return audit

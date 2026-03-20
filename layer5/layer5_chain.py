@@ -84,8 +84,8 @@ def run_layer5(
             llm_reason = hard_rules["rejection_reason"]
             try:
                 from groq import Groq
-                import os
-                client = Groq(api_key=os.getenv("API_KEY", ""))
+                from utils_keys import get_content_generation_key
+                client = Groq(api_key=get_content_generation_key())
                 resp = client.chat.completions.create(
                     messages=[{"role": "user", "content": f"You are a credit analyst. Explain this rejection reason clearly and professionally in 2-3 sentences to the customer/officer: {hard_rules['rejection_reason']}."}],
                     model="meta-llama/llama-4-scout-17b-16e-instruct",
@@ -237,6 +237,7 @@ def run_layer5(
             confidence_result.get("uncertainty_level", "MODERATE"),
             confidence_result.get("pricing_buffer_bps", 25),
             hard_rules.get("conditions", []),
+            bool(l2.get("green_financing_eligible")),
         )
 
         f_decision = pool.submit(
@@ -343,7 +344,7 @@ Required Content:
     output = build_output_package(
         validation, hard_rules, xgb_result, shap_result,
         confidence_result, llm_result, fusion, pricing_result,
-        decision_result, loan_result, snapshot,
+        decision_result, loan_result, snapshot, layer2_data=l2,
     )
 
     print(f"\n{'='*60}")

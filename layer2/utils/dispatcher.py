@@ -15,10 +15,15 @@ class DocumentDispatcher:
         "SRC_ITR": ["itr", "income tax", "computation", "acknowledgement"],
         "SRC_BANK": ["statement", "sbi", "hdfc", "icici", "axis", "kotak", "bank"],
         "SRC_FS": ["financials", "balance sheet", "p&l", "profit and loss", "audit report"],
-        "SRC_AR": ["annual report", "directors report"],
+        "SRC_AR": ["annual report", "directors report", "cashflow", "cash flow"],
         "SRC_BMM": ["board minutes", "resolution", "bmm"],
         "SRC_RAT": ["rating", "crisil", "icra", "care", "india ratings"],
-        "SRC_SHP": ["shareholding", "shp"]
+        "SRC_SHP": ["shareholding", "shp", "promoter holding", "share pattern"],
+        "SRC_ALM": ["alm", "asset liability", "alco", "maturity profile", "liquidity gap"],
+        "SRC_BRP": ["borrowing profile", "debt schedule", "credit facilities", "lender list", "borrowing"],
+        "SRC_PRT": ["portfolio", "par report", "collection efficiency", "pool performance", "gnpa", "nnpa"],
+        "SRC_ESG": ["sustainability", "esg", "climate", "carbon", "greenhouse", "emissions", "environment"],
+        "SRC_ANR": ["annual return", "mgt-7", "mgt7", "aoc-4", "aoc4", "form 20b", "mca return"],
     }
 
     @staticmethod

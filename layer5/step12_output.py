@@ -2,6 +2,7 @@
 Step 12 — Output Package Builder
 Assembles the complete Layer 5 output for Layer 6 (CAM / Presentation).
 """
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 
 
@@ -17,8 +18,11 @@ def build_output_package(
     decision_result: Dict,
     loan_result: Dict,
     snapshot: Dict,
+    layer2_data: Dict = None,
 ) -> Dict[str, Any]:
     """Assemble final layer5_output dict for DB storage and Layer 6."""
+
+    l2 = layer2_data or {}
 
     output = {
         # ─── Decision Summary ──────────────────────────────
@@ -35,10 +39,17 @@ def build_output_package(
             "conditions": decision_result.get("conditions", []),
             "covenants": decision_result.get("covenants", []),
             "llm_decision_summary": decision_result.get("llm_decision_summary", ""),
+            "green_financing": {
+                "eligible": bool(pricing_result.get("green_eligible")),
+                "discount_applied_pct": pricing_result.get("green_discount_pct", 0),
+                "esg_transition_risk": l2.get("esg_transition_risk", "N/A"),
+                "carbon_footprint_mt": l2.get("carbon_footprint_mt", "N/A"),
+            },
         },
 
         # ─── Score Breakdown ───────────────────────────────
         "score_breakdown": fusion_result.get("score_breakdown", {}),
+        "fusion_narrative": fusion_result.get("fusion_narrative", ""),
 
         # ─── Explanation Package ───────────────────────────
         "explanation": {
@@ -96,6 +107,13 @@ def build_output_package(
 
         # ─── Audit Snapshot ─────────────────────────────────
         "audit_snapshot": snapshot,
+
+        # ─── Decision Audit Trail (Self-Explainability) ─────
+        "decision_audit_trail": _build_audit_trail(
+            validation_result, hard_rules_result, xgb_result, shap_result,
+            confidence_result, llm_result, fusion_result, pricing_result,
+            decision_result, loan_result, l2
+        ),
     }
 
     decision = output["decision_summary"]["decision"]
@@ -105,3 +123,100 @@ def build_output_package(
           f"{output['decision_summary']['interest_rate']}%")
 
     return output
+
+
+def _build_audit_trail(val, hr, xgb, shap, conf, llm, fusion, pricing, decision, loan, l2):
+    """Build a complete, human-readable chain of reasoning for every decision."""
+    try:
+        # Score journey
+        score_journey = fusion.get("fusion_narrative", "")
+
+        # Hard rules summary
+        rule_log = hr.get("rule_log", [])
+        passed = sum(1 for r in rule_log if r.get("passed", True))
+        failed = sum(1 for r in rule_log if not r.get("passed", True))
+        conditions = hr.get("conditions", [])
+        if failed == 0 and not conditions:
+            hr_summary = f"All {passed} hard rules passed. No blocks."
+        elif failed > 0:
+            hr_summary = f"{failed} of {passed + failed} hard rules FAILED. Gate: {hr.get('gate', 'UNKNOWN')}."
+        else:
+            hr_summary = (f"All {passed} hard rules passed with {len(conditions)} conditional flag(s): "
+                         + ", ".join(c.get("rule_id", "") for c in conditions))
+
+        # Pricing explanation
+        base = pricing.get("base_rate", 0)
+        spread = pricing.get("band_spread", 0)
+        unc = pricing.get("uncertainty_buffer_pct", 0)
+        cond_pen = pricing.get("conditional_penalty_pct", 0)
+        green_disc = pricing.get("green_discount_pct", 0)
+        final_rate = pricing.get("final_interest_rate", 0)
+        pricing_expl = (f"Base {base}% + Band spread {spread}% + Uncertainty {unc}% "
+                       f"+ Condition penalty {cond_pen}%")
+        if green_disc > 0:
+            pricing_expl += f" − Green discount {green_disc}%"
+        pricing_expl += f" = {final_rate}%"
+
+        # ESG impact
+        green = pricing.get("green_eligible", False)
+        if green:
+            esg_impact = (f"Green financing eligible → {green_disc}% rate discount applied. "
+                         f"COV-07 ESG covenant added.")
+        else:
+            esg_impact = "No ESG/Climate report provided or green eligibility not established."
+
+        # Statutory check
+        filed = l2.get("annual_return_filed")
+        declared = l2.get("declared_indebtedness")
+        borr = l2.get("total_outstanding_borrowings")
+        statutory = "No Annual Return data available."
+        if filed is not None:
+            filed_str = "✅ Filed" if (filed is True or str(filed).lower() == "true") else "⚠️ Not Filed"
+            statutory = f"Annual Return: {filed_str}."
+            if declared and borr:
+                try:
+                    d, b = float(declared), float(borr)
+                    if b > 0:
+                        gap = abs(d - b) / b * 100
+                        statutory += f" Indebtedness mismatch: {gap:.1f}%"
+                        statutory += " (within 5% tolerance)." if gap <= 5 else " ⚠️ EXCEEDS 5% tolerance."
+                except (ValueError, TypeError):
+                    pass
+
+        # Key SHAP drivers
+        pos = shap.get("top_positive_drivers", [])
+        neg = shap.get("top_negative_drivers", [])
+        key_drivers = []
+        for d in pos[:3]:
+            key_drivers.append(f"{d.get('label', '?')} = {d.get('value', '?')} (strength)")
+        for d in neg[:3]:
+            key_drivers.append(f"{d.get('label', '?')} = {d.get('value', '?')} (concern)")
+
+        # Decision reason
+        dec = decision.get("decision", "UNKNOWN")
+        score = fusion.get("final_score", 0)
+        band = fusion.get("final_band", "?")
+        pd_val = fusion.get("final_pd", 0)
+        reason = f"{dec} — Score {score} ({band}), PD {pd_val*100:.1f}%"
+        amt = loan.get("approved_amount_lakhs")
+        if amt:
+            reason += f", Sanction ₹{amt}L @ {final_rate}%"
+
+        ist = timezone(timedelta(hours=5, minutes=30))
+
+        return {
+            "score_journey": score_journey,
+            "hard_rules_summary": hr_summary,
+            "pricing_explanation": pricing_expl,
+            "esg_impact": esg_impact,
+            "statutory_check": statutory,
+            "key_drivers": key_drivers,
+            "decision_reason": reason,
+            "llm_override_flag": llm.get("override_flag", "MAINTAIN"),
+            "llm_biggest_risk": llm.get("biggest_risk", ""),
+            "llm_biggest_strength": llm.get("biggest_strength", ""),
+            "timestamp": datetime.now(ist).isoformat(),
+        }
+    except Exception as e:
+        return {"error": f"Audit trail generation failed: {e}", "timestamp": datetime.now().isoformat()}
+

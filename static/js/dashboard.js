@@ -78,6 +78,65 @@ function initSocket() {
         updatePipelineBar(data.layer, data.pct || 0, false, data.detail || '');
     });
 
+    // ─── Large PDF Chunk Progress Events ────────────────────────
+    STATE.socket.on('l2_chunk_info', (data) => {
+        console.log('Chunk info:', data);
+        const detail = `📑 ${data.filename}: Large PDF (${data.total_pages} pages) → ${data.total_chunks} chunks`;
+        updatePipelineBar(2, 15, false, detail);
+        showChunkBanner(data.filename, data.total_pages, data.total_chunks);
+    });
+
+    STATE.socket.on('l2_chunk_progress', (data) => {
+        console.log('Chunk progress:', data);
+        const chunkPct = Math.round((data.chunk_index / data.total_chunks) * 100);
+        const detail = `📄 ${data.filename}: pages ${data.start_page}–${data.end_page} (chunk ${data.chunk_index}/${data.total_chunks})`;
+        // Map chunk progress within Layer 2's 5-90% range
+        const l2Pct = 5 + (chunkPct * 0.85);
+        updatePipelineBar(2, l2Pct, false, detail);
+        updateChunkBanner(data.chunk_index, data.total_chunks, data.start_page, data.end_page, data.total_pages);
+    });
+
+    STATE.socket.on('l2_file_progress', (data) => {
+        console.log('File progress:', data);
+
+        // Normalize both filenames: secure_filename on server replaces spaces with underscores.
+        // We compare normalized versions but update the original File object.
+        const normalize = name => name.replace(/ /g, '_');
+        const serverName = normalize(data.filename);
+        const fileObj = STATE.uploadedFiles.find(f => normalize(f.name) === serverName);
+
+        if (data.status === 'processing') {
+            const chunkedTag = data.is_chunked ? ' (chunked)' : '';
+            const detail = `Processing ${data.filename}${chunkedTag} — file ${data.file_index}/${data.total_files}`;
+            updatePipelineBar(2, 10, false, detail);
+            if (fileObj) {
+                fileObj.processing_status = 'Processing';
+                renderDocQueue();
+            }
+        } else if (data.status === 'completed') {
+            const detail = `✅ ${data.filename} done (${data.fields_filled}/${data.total_fields} fields)`;
+            updatePipelineBar(2, 10 + (data.file_index / data.total_files * 80), false, detail);
+            hideChunkBanner();
+            if (fileObj) {
+                fileObj.processing_status = 'Completed';
+                renderDocQueue();
+            }
+        }
+    });
+
+    // ─── Rate Limit Exhaustion — Human Decision Required ─────────
+    STATE.socket.on('rate_limit_choice', (data) => {
+        console.warn('Rate limit exhaustion:', data);
+        updatePipelineBar(2, 0, false, '⏸ All API keys exhausted — awaiting your decision');
+        showRateLimitModal(data);
+    });
+
+    STATE.socket.on('rate_limit_waiting', (data) => {
+        const detail = `⏳ Waiting ${data.seconds}s for TPM window to reset...`;
+        updatePipelineBar(2, 0, false, detail);
+        showToast(`⏳ Resuming in ${data.seconds}s...`);
+    });
+
     STATE.socket.on('layer_complete', (data) => {
         console.log('Layer complete:', data);
         STATE.layersDone.add(data.layer);
@@ -164,13 +223,15 @@ function initSocket() {
 
     // ─── Layer 4 HITL Events ─────────────────────────────────────
     STATE.socket.on('layer4_hitl_forensics', (data) => {
-        console.log('L4 HITL-1 Forensics:', data);
+        console.log('L4 HITL-1 Forensics (auto-skipped):', data);
         STATE._l4AppId = data.app_id;
-        STATE._l4Hitl1Data = data;
-        renderL4Hitl1Modal(data);
-        document.getElementById('modalL4Hitl1').style.display = 'flex';
-        if (window.lucide) lucide.createIcons();
-        showToast('⏸ Pipeline paused — please review forensic flags', 'warning');
+        // Auto-skip HITL-1: accept all forensic flags without pausing
+        fetch(`/api/applications/${data.app_id}/layer4_hitl_1`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dismissed_alert_ids: [], dismiss_reasons: {} })
+        }).catch(e => console.warn('HITL-1 auto-skip failed:', e));
+        showToast('✅ Forensic flags auto-accepted — pipeline continues', 'info');
     });
 
     STATE.socket.on('layer4_hitl_research', (data) => {
@@ -256,6 +317,186 @@ function updatePipelineBar(layer, layerPct, isDone, detail) {
     }
 }
 
+// ─── Chunk Progress Banner (sub-banner for large PDF processing) ────
+function showChunkBanner(filename, totalPages, totalChunks) {
+    let banner = document.getElementById('chunkProgressBanner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'chunkProgressBanner';
+        banner.style.cssText = `
+            margin: 0.5rem 0 0 0; padding: 0.6rem 1rem; border-radius: 8px;
+            background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08));
+            border: 1px solid rgba(99,102,241,0.25); font-size: 0.82rem;
+            color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.4rem;
+        `;
+        const pipelineBanner = document.getElementById('pipelineProgressBanner');
+        if (pipelineBanner) pipelineBanner.parentNode.insertBefore(banner, pipelineBanner.nextSibling);
+        else document.body.prepend(banner);
+    }
+    banner.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span id="chunkLabel">📑 <strong>${filename}</strong> — ${totalPages} pages → ${totalChunks} chunks</span>
+            <span id="chunkPct" style="font-weight:600;color:#818cf8;">0%</span>
+        </div>
+        <div style="width:100%;height:6px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">
+            <div id="chunkBar" style="height:100%;width:0%;background:linear-gradient(90deg,#6366f1,#8b5cf6);border-radius:4px;transition:width 0.4s ease;"></div>
+        </div>
+        <div id="chunkDetail" style="font-size:0.75rem;color:var(--text-tertiary);">Initializing chunked extraction...</div>
+    `;
+    banner.style.display = '';
+}
+
+function updateChunkBanner(chunkIdx, totalChunks, startPage, endPage, totalPages) {
+    const bar = document.getElementById('chunkBar');
+    const pct = document.getElementById('chunkPct');
+    const detail = document.getElementById('chunkDetail');
+    if (!bar) return;
+
+    const percent = Math.round((chunkIdx / totalChunks) * 100);
+    bar.style.width = percent + '%';
+    if (pct) pct.textContent = percent + '%';
+    if (detail) detail.textContent = `🔄 Processing chunk ${chunkIdx}/${totalChunks} — pages ${startPage}–${endPage} of ${totalPages}`;
+}
+
+function hideChunkBanner() {
+    const banner = document.getElementById('chunkProgressBanner');
+    if (banner) {
+        banner.style.display = 'none';
+    }
+}
+
+// ─── Rate Limit Warning Modal ────────────────────────────────────
+function showRateLimitModal(data) {
+    // Remove any existing modal
+    const existing = document.getElementById('rateLimitModal');
+    if (existing) existing.remove();
+
+    const isTpm = data.exhaustion_type === 'tpm';
+    const waitSecs = data.seconds_until_reset || 60;
+    const keysCount = data.keys_count || 6;
+
+    const modal = document.createElement('div');
+    modal.id = 'rateLimitModal';
+    modal.style.cssText = `
+        position: fixed; inset: 0; z-index: 99999;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+        animation: fadeIn 0.2s ease;
+    `;
+
+    modal.innerHTML = `
+        <div style="
+            background: linear-gradient(145deg, #1a1f3a, #0f1629);
+            border: 1px solid rgba(251,191,36,0.35);
+            border-radius: 16px; padding: 2rem; max-width: 480px; width: 90%;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(251,191,36,0.15);
+            animation: slideUp 0.3s ease;
+        ">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:1.2rem;">
+                <span style="font-size:2rem;">⚠️</span>
+                <div>
+                    <h3 style="margin:0;color:#f59e0b;font-size:1.1rem;font-weight:700;">
+                        All ${keysCount} API Keys Exhausted
+                    </h3>
+                    <p style="margin:0;color:var(--text-secondary);font-size:0.8rem;">
+                        ${isTpm ? 'Temporary TPM (tokens/minute) limit reached' : '⛔ Daily TPD limit reached — cannot recover until tomorrow'}
+                    </p>
+                </div>
+            </div>
+
+            <!-- Message -->
+            <div style="
+                background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.2);
+                border-radius: 8px; padding: 0.9rem 1rem; margin-bottom:1.4rem;
+                font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;
+            ">
+                ${data.message || 'All API keys have reached their rate limits.'}
+            </div>
+
+            <!-- Choices -->
+            <div style="display:flex;flex-direction:column;gap:0.8rem;">
+
+                <!-- Wait button (only meaningful for TPM) -->
+                <button id="rlWaitBtn" onclick="sendRateLimitDecision('wait')" ${!isTpm ? 'disabled' : ''} style="
+                    padding: 0.85rem 1.2rem; border-radius: 10px; border: none; cursor: ${isTpm ? 'pointer' : 'not-allowed'};
+                    background: ${isTpm ? 'linear-gradient(135deg,#6366f1,#4f46e5)' : 'rgba(255,255,255,0.05)'};
+                    color: ${isTpm ? '#fff' : 'rgba(255,255,255,0.3)'}; font-size: 0.9rem; font-weight: 600;
+                    display: flex; align-items: center; justify-content: space-between;
+                    transition: opacity 0.2s; ${isTpm ? '' : 'opacity:0.45;'}
+                ">
+                    <span>⏳ Wait for TPM reset <small style="font-weight:400;opacity:0.8;">(full LLM accuracy)</small></span>
+                    <span id="rlCountdown" style="
+                        background: rgba(255,255,255,0.15); border-radius: 8px;
+                        padding: 0.2rem 0.5rem; font-size: 0.85rem; font-family: monospace;
+                    ">${isTpm ? waitSecs + 's' : 'N/A'}</span>
+                </button>
+                ${isTpm ? '' : '<p style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin:-0.4rem 0 0.2rem 0.2rem;">Daily limit — waiting won\'t help today</p>'}
+
+                <!-- OCR fallback button (always available) -->
+                <button onclick="sendRateLimitDecision('ocr')" style="
+                    padding: 0.85rem 1.2rem; border-radius: 10px; border: 1px solid rgba(239,68,68,0.4);
+                    background: rgba(239,68,68,0.08); color: #fca5a5; font-size: 0.9rem; font-weight: 600;
+                    cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+                    transition: background 0.2s;
+                " onmouseover="this.style.background='rgba(239,68,68,0.14)'" onmouseout="this.style.background='rgba(239,68,68,0.08)'">
+                    <span>📷 Use OCR Fallback</span>
+                    <span style="font-size:0.75rem;background:rgba(239,68,68,0.2);border-radius:6px;padding:0.2rem 0.5rem;color:#f87171;">
+                        ⚠️ Lower accuracy
+                    </span>
+                </button>
+                <p style="
+                    font-size: 0.72rem; color: rgba(248,113,113,0.7); margin: -0.5rem 0 0 0.2rem;
+                    line-height: 1.5;
+                ">
+                    ⚠ <strong>Accuracy Warning:</strong> OCR regex extraction is significantly less accurate than LLM extraction.
+                    Data fields may be incomplete, incorrect, or missing. Review results carefully.
+                </p>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Countdown timer (only for TPM)
+    if (isTpm) {
+        let remaining = waitSecs;
+        const countdownEl = document.getElementById('rlCountdown');
+        const waitBtn = document.getElementById('rlWaitBtn');
+        const timer = setInterval(() => {
+            remaining--;
+            if (countdownEl) countdownEl.textContent = remaining + 's';
+            if (remaining <= 0) {
+                clearInterval(timer);
+                if (countdownEl) countdownEl.textContent = 'Ready!';
+                if (waitBtn) {
+                    waitBtn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+                    waitBtn.querySelector('span').textContent = '✅ Keys reset — click to resume with LLM';
+                }
+            }
+        }, 1000);
+        modal._timer = timer;
+    }
+}
+
+function sendRateLimitDecision(decision) {
+    const modal = document.getElementById('rateLimitModal');
+    if (modal) {
+        if (modal._timer) clearInterval(modal._timer);
+        modal.remove();
+    }
+    const caseId = STATE.currentApp?.case_id || '';
+    if (STATE.socket) {
+        STATE.socket.emit('rate_limit_decision', { case_id: caseId, decision });
+    }
+    if (decision === 'wait') {
+        showToast('⏳ Decision sent — pipeline will resume once TPM resets');
+    } else {
+        showToast('📷 Switching to OCR fallback (lower accuracy)');
+    }
+}
+
+
 // ─── HITL Document Review Functions ─────────────────────────────
 const DOC_CATEGORIES = [
     { key: 'SRC_GST', label: 'GST Returns' },
@@ -266,6 +507,11 @@ const DOC_CATEGORIES = [
     { key: 'SRC_BMM', label: 'Board Minutes' },
     { key: 'SRC_RAT', label: 'Credit Rating' },
     { key: 'SRC_SHP', label: 'Shareholding' },
+    { key: 'SRC_ALM', label: 'ALM Report' },
+    { key: 'SRC_BPR', label: 'Borrowing Profile' },
+    { key: 'SRC_PFO', label: 'Portfolio / Performance' },
+    { key: 'SRC_ESG', label: 'Sustainability / Climate Report' },
+    { key: 'SRC_ANR', label: 'Annual Return (MCA/GST)' },
     { key: 'SRC_UNKNOWN', label: 'Unknown / Skip' }
 ];
 
@@ -455,40 +701,10 @@ function updatePipelineStatusList() {
     }).join('');
 }
 
-// ─── New Application ────────────────────────────────────────────
-function showNewAppModal() {
-    document.getElementById('inputCompanyName').value = '';
-    document.getElementById('modalNewApp').style.display = 'flex';
-}
-
-async function createApplication() {
-    const name = document.getElementById('inputCompanyName').value.trim();
-    if (!name) { showToast('⚠️ Enter a company name'); return; }
-
-    try {
-        const res = await fetch('/api/applications', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ company_name: name })
-        });
-        const data = await res.json();
-        if (data.error) { showToast('❌ ' + data.error); return; }
-
-        STATE.currentApp = { id: data.id, case_id: data.case_id, company_name: name };
-
-        // Show active app in sidebar
-        document.getElementById('activeAppInfo').style.display = '';
-        document.getElementById('activeAppName').textContent = name;
-        document.getElementById('activeAppId').textContent = data.case_id;
-        document.getElementById('activeAppStatus').innerHTML = '<span class="status-dot active"></span> Ready';
-
-        closeModal('modalNewApp');
-        showSection('ingestion');
-        showToast('✅ Application ' + data.case_id + ' created');
-    } catch (e) {
-        showToast('❌ Failed to create application');
-    }
-}
+// ─── New Application (moved to inline onboarding wizard) ───────
+// showNewAppModal() and createApplication() are now defined
+// in the inline <script> at the bottom of dashboard.html
+// as part of the Entity Onboarding multi-step wizard.
 
 // ─── File Upload ────────────────────────────────────────────────
 function handleDrop(e) {
@@ -505,8 +721,11 @@ function handleFileSelect(e) {
 }
 
 function addFilesToQueue(files) {
+    if (document.getElementById('btnRunIngestion').disabled && STATE.uploadedFiles.length > 0) return; // Prevent adding if running
+
     files.forEach(f => {
         if (!STATE.uploadedFiles.find(uf => uf.name === f.name)) {
+            f.processing_status = 'Pending';
             STATE.uploadedFiles.push(f);
         }
     });
@@ -548,14 +767,18 @@ function renderDocQueue() {
             ? (f.size / 1048576).toFixed(1) + ' MB'
             : (f.size / 1024).toFixed(0) + ' KB';
 
+        const status = f.processing_status || 'Pending';
+        const statusClass = status === 'Completed' ? 'completed' : status === 'Processing' ? 'processing' : 'pending';
+        const disableDelete = status !== 'Pending' ? 'disabled' : '';
+
         return `<div class="doc-item">
             <span class="doc-type-badge ${typeBadge}">${typeLabel}</span>
             <div class="doc-info">
                 <div class="doc-name">${f.name}</div>
                 <div class="doc-meta">${size}</div>
             </div>
-            <span class="doc-status pending">Pending</span>
-            <button class="btn btn-danger btn-sm" onclick="removeFromQueue(${i})">✕</button>
+            <span class="doc-status ${statusClass}">${status}</span>
+            <button class="btn btn-danger btn-sm" onclick="removeFromQueue(${i})" ${disableDelete}>✕</button>
         </div>`;
     }).join('');
 }
@@ -568,6 +791,11 @@ async function runIngestion() {
     const btn = document.getElementById('btnRunIngestion');
     btn.disabled = true;
     btn.textContent = '⏳ Uploading...';
+
+    // Disable file input and upload zone
+    document.getElementById('fileInput').disabled = true;
+    const dropZone = document.querySelector('.upload-zone');
+    if (dropZone) dropZone.style.pointerEvents = 'none';
 
     // Upload files first
     const formData = new FormData();
@@ -1716,6 +1944,12 @@ function renderL4Hitl1Modal(data) {
         </div>`;
     });
 
+    // ─── HITL Action Buttons (Flag Issue + Add Custom Data) ─────────
+    html += `<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button class="btn btn-outline" onclick="showAddIssueModal(1)" style="font-size:0.82rem;">🚩 Flag Custom Issue</button>
+        <button class="btn btn-outline" onclick="showAddFieldModal()" style="font-size:0.82rem;">📝 Add Custom Data Field</button>
+    </div>`;
+
     container.innerHTML = html;
 }
 
@@ -1950,6 +2184,14 @@ function renderL4Hitl3Modal(data) {
             </td>
         </tr>`;
     });
+
+    // ─── HITL Action Buttons ──────────────────────────────────
+    rows += `<tr><td colspan="5" style="padding-top:0.75rem;border-top:1px solid var(--border);">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-outline" onclick="showAddIssueModal(3)" style="font-size:0.82rem;">🚩 Flag Custom Issue</button>
+            <button class="btn btn-outline" onclick="showAddFieldModal()" style="font-size:0.82rem;">📝 Add Custom Data Field</button>
+        </div>
+    </td></tr>`;
 
     document.getElementById('hitl3FeaturesBody').innerHTML = rows;
 }
@@ -2845,6 +3087,7 @@ async function applyDigitalSignature() {
 }
 
 
+
 // ─── Load CAM data from API when navigating to CAM tab ──────────────────────
 async function loadCAMData() {
     const appId = STATE.currentApp?.id;
@@ -2861,6 +3104,347 @@ async function loadCAMData() {
     }
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  CHATBOT WIDGET — Bottom-right floating chat with LLM
+// ═══════════════════════════════════════════════════════
+
+(function initChatbotWidget() {
+    document.addEventListener('DOMContentLoaded', () => {
+        // Inject CSS
+        const style = document.createElement('style');
+        style.textContent = `
+            #ic-chatbot-fab {
+                position: fixed; bottom: 28px; right: 28px; z-index: 9999;
+                width: 56px; height: 56px; border-radius: 50%;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border: none; cursor: pointer; box-shadow: 0 4px 20px rgba(102,126,234,.45);
+                display: flex; align-items: center; justify-content: center;
+                transition: transform .2s, box-shadow .2s;
+                color: #fff; font-size: 24px;
+            }
+            #ic-chatbot-fab:hover { transform: scale(1.08); box-shadow: 0 6px 28px rgba(102,126,234,.6); }
+            #ic-chatbot-panel {
+                position: fixed; bottom: 96px; right: 28px; z-index: 9998;
+                width: 380px; max-height: 520px; border-radius: 16px;
+                background: var(--panel-bg, #1a1a2e); border: 1px solid rgba(255,255,255,.1);
+                box-shadow: 0 12px 40px rgba(0,0,0,.5); display: none;
+                flex-direction: column; overflow: hidden;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+            }
+            #ic-chatbot-panel.open { display: flex; }
+            #ic-chat-header {
+                padding: 14px 18px; background: linear-gradient(135deg, #667eea, #764ba2);
+                display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+            }
+            #ic-chat-header span { color: #fff; font-weight: 600; font-size: .95rem; }
+            #ic-chat-header .chat-close {
+                margin-left: auto; background: none; border: none;
+                color: rgba(255,255,255,.7); cursor: pointer; font-size: 18px;
+            }
+            #ic-chat-messages {
+                flex: 1; overflow-y: auto; padding: 14px; display: flex;
+                flex-direction: column; gap: 10px; min-height: 200px; max-height: 360px;
+            }
+            .chat-msg {
+                max-width: 85%; padding: 10px 14px; border-radius: 12px;
+                font-size: .85rem; line-height: 1.5; word-wrap: break-word;
+            }
+            .chat-msg.user {
+                align-self: flex-end; background: linear-gradient(135deg, #667eea, #764ba2);
+                color: #fff; border-bottom-right-radius: 4px; white-space: pre-wrap;
+            }
+            .chat-msg.assistant {
+                align-self: flex-start; background: rgba(255,255,255,.12);
+                color: #f0f0f0; border-bottom-left-radius: 4px;
+                border: 1px solid rgba(255,255,255,.08);
+            }
+            .chat-msg.error { background: rgba(239,68,68,.15); color: #ef4444; }
+            .chat-msg.system-info {
+                align-self: center; background: rgba(102,126,234,.1);
+                color: var(--text-secondary, #9ca3af); font-size: .78rem; text-align: center;
+            }
+            #ic-chat-input-row {
+                padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.08);
+                display: flex; gap: 8px; flex-shrink: 0;
+            }
+            #ic-chat-input {
+                flex: 1; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+                border-radius: 8px; padding: 8px 12px; color: #f0f0f0;
+                font-size: .85rem; outline: none; resize: none;
+            }
+            #ic-chat-input::placeholder { color: rgba(255,255,255,.45); }
+            #ic-chat-input:focus { border-color: #667eea; box-shadow: 0 0 0 2px rgba(102,126,234,.25); }
+            #ic-chat-send {
+                background: linear-gradient(135deg, #667eea, #764ba2); border: none;
+                border-radius: 8px; padding: 8px 14px; color: #fff; cursor: pointer;
+                font-size: .85rem; font-weight: 600; transition: opacity .2s;
+            }
+            #ic-chat-send:disabled { opacity: .5; cursor: not-allowed; }
+            /* Markdown in chat messages */
+            .chat-msg.assistant code { background: rgba(255,255,255,.1); padding: 1px 4px; border-radius: 3px; font-size: .82rem; }
+            .chat-msg.assistant strong { font-weight: 700; }
+            .chat-msg.assistant em { font-style: italic; }
+            .chat-msg.assistant ul, .chat-msg.assistant ol { padding-left: 16px; margin: 4px 0; }
+            .chat-msg.assistant li { margin-bottom: 2px; }
+            .chat-msg.assistant p { margin: 4px 0; }
+
+            /* Audit Trail Modal */
+            #ic-audit-modal-overlay {
+                position: fixed; inset: 0; z-index: 10000;
+                background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+                display: none; align-items: center; justify-content: center;
+            }
+            #ic-audit-modal-overlay.open { display: flex; }
+            #ic-audit-modal {
+                background: var(--panel-bg, #1a1a2e); border: 1px solid rgba(255,255,255,.1);
+                border-radius: 16px; max-width: 680px; width: 92%;
+                max-height: 80vh; overflow-y: auto; padding: 28px;
+                box-shadow: 0 16px 60px rgba(0,0,0,.5);
+            }
+            #ic-audit-modal h2 {
+                margin: 0 0 18px; font-size: 1.3rem;
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            }
+            .audit-section { margin-bottom: 16px; }
+            .audit-section h4 {
+                font-size: .85rem; color: #c4b5fd;
+                margin: 0 0 6px; text-transform: uppercase; letter-spacing: .5px;
+            }
+            .audit-section p, .audit-section ul {
+                font-size: .9rem; color: #f0f0f0;
+                margin: 0; line-height: 1.6;
+            }
+            .audit-section ul { padding-left: 18px; }
+            .audit-section li { color: #e2e8f0; margin-bottom: 4px; }
+            .audit-close {
+                position: absolute; top: 18px; right: 18px;
+                background: none; border: none; color: var(--text-secondary, #9ca3af);
+                font-size: 20px; cursor: pointer;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Inject chatbot HTML
+        const chatHTML = `
+            <button id="ic-chatbot-fab" title="Chat with AI about this application">💬</button>
+            <div id="ic-chatbot-panel">
+                <div id="ic-chat-header">
+                    <span>🤖 Intelli-Credit AI</span>
+                    <button class="chat-close" id="ic-chat-close-btn">✕</button>
+                </div>
+                <div id="ic-chat-messages">
+                    <div class="chat-msg system-info">Ask me anything about this loan application — decision rationale, scoring, ESG impact, etc.</div>
+                </div>
+                <div id="ic-chat-input-row">
+                    <input id="ic-chat-input" placeholder="Ask about this application…" autocomplete="off" />
+                    <button id="ic-chat-send">Send</button>
+                </div>
+            </div>
+
+            <div id="ic-audit-modal-overlay">
+                <div id="ic-audit-modal" style="position:relative;">
+                    <button class="audit-close" id="ic-audit-close">✕</button>
+                    <h2>📋 Decision Audit Trail</h2>
+                    <div id="ic-audit-content"><p style="color:var(--text-secondary);">Loading audit trail…</p></div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', chatHTML);
+
+        // Toggle chatbot
+        const fab = document.getElementById('ic-chatbot-fab');
+        const panel = document.getElementById('ic-chatbot-panel');
+        const closeBtn = document.getElementById('ic-chat-close-btn');
+        const input = document.getElementById('ic-chat-input');
+        const sendBtn = document.getElementById('ic-chat-send');
+        const messagesDiv = document.getElementById('ic-chat-messages');
+
+        fab.addEventListener('click', () => panel.classList.toggle('open'));
+        closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+
+        // Simple markdown-to-HTML for chat messages
+        function _renderChatMarkdown(text) {
+            if (!text) return '';
+            let html = text
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')  // escape HTML
+                .replace(/```([\s\S]*?)```/g, '<pre style="background:rgba(255,255,255,.08);padding:6px 8px;border-radius:4px;overflow-x:auto;font-size:.8rem;"><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>')
+                .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+            // Wrap consecutive <li> in <ul>
+            html = html.replace(/((?:<li>.*?<\/li>\s*)+)/g, '<ul>$1</ul>');
+            // Line breaks
+            html = html.replace(/\n/g, '<br>');
+            return html;
+        }
+
+        // Send message
+        async function sendChatMessage() {
+            const msg = input.value.trim();
+            if (!msg) return;
+            const appId = STATE.currentApp?.id;
+            if (!appId) { showToast('⚠️ No application loaded'); return; }
+
+            // Render user message
+            const userBubble = document.createElement('div');
+            userBubble.className = 'chat-msg user';
+            userBubble.textContent = msg;
+            messagesDiv.appendChild(userBubble);
+            input.value = '';
+            sendBtn.disabled = true;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // Create assistant bubble for streaming
+            const assistBubble = document.createElement('div');
+            assistBubble.className = 'chat-msg assistant';
+            assistBubble.textContent = '';
+            messagesDiv.appendChild(assistBubble);
+            let rawText = ''; // accumulate raw text for markdown rendering
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ app_id: appId, message: msg }),
+                });
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // keep incomplete line
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        try {
+                            const payload = JSON.parse(line.slice(6));
+                            if (payload.content) {
+                                rawText += payload.content;
+                                assistBubble.innerHTML = _renderChatMarkdown(rawText);
+                                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                            }
+                            if (payload.error) {
+                                assistBubble.className = 'chat-msg error';
+                                assistBubble.textContent = payload.error;
+                            }
+                        } catch (_) { /* ignore parse errors on partial data */ }
+                    }
+                }
+            } catch (err) {
+                assistBubble.className = 'chat-msg error';
+                assistBubble.textContent = 'Connection error: ' + err.message;
+            }
+            sendBtn.disabled = false;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        sendBtn.addEventListener('click', sendChatMessage);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+        });
+
+        // Audit Trail Modal
+        const auditOverlay = document.getElementById('ic-audit-modal-overlay');
+        document.getElementById('ic-audit-close').addEventListener('click', () => {
+            auditOverlay.classList.remove('open');
+        });
+        auditOverlay.addEventListener('click', (e) => {
+            if (e.target === auditOverlay) auditOverlay.classList.remove('open');
+        });
+    });
+})();
+
+// Open Audit Trail modal
+function showDecisionAuditTrail() {
+    const appId = STATE.currentApp?.id;
+    if (!appId) { showToast('⚠️ No application loaded'); return; }
+
+    const overlay = document.getElementById('ic-audit-modal-overlay');
+    const content = document.getElementById('ic-audit-content');
+    content.innerHTML = '<p style="color:var(--text-secondary);">Loading audit trail…</p>';
+    overlay.classList.add('open');
+
+    fetch(`/api/applications/${appId}`)
+        .then(r => r.json())
+        .then(data => {
+            const l5 = data.layer5_output || {};
+            const trail = l5.decision_audit_trail || {};
+            const explanation = l5.explanation || {};
+            const fiveCs = explanation.five_cs || {};
+
+            if (trail.error) {
+                content.innerHTML = `<p style="color:#ef4444;">⚠️ ${trail.error}</p>`;
+                return;
+            }
+
+            let html = '';
+
+            // Score Journey
+            if (trail.score_journey) {
+                html += `<div class="audit-section"><h4>📊 Score Journey</h4><p>${trail.score_journey}</p></div>`;
+            }
+
+            // Hard Rules
+            if (trail.hard_rules_summary) {
+                html += `<div class="audit-section"><h4>📋 Hard Rules</h4><p>${trail.hard_rules_summary}</p></div>`;
+            }
+
+            // Pricing
+            if (trail.pricing_explanation) {
+                html += `<div class="audit-section"><h4>💰 Pricing Breakdown</h4><p>${trail.pricing_explanation}</p></div>`;
+            }
+
+            // ESG Impact
+            if (trail.esg_impact) {
+                html += `<div class="audit-section"><h4>🌱 ESG Impact</h4><p>${trail.esg_impact}</p></div>`;
+            }
+
+            // Statutory Check
+            if (trail.statutory_check) {
+                html += `<div class="audit-section"><h4>📑 Statutory Compliance</h4><p>${trail.statutory_check}</p></div>`;
+            }
+
+            // Key Drivers
+            const drivers = trail.key_drivers || [];
+            if (drivers.length) {
+                html += `<div class="audit-section"><h4>🔑 Key SHAP Drivers</h4><ul>`;
+                drivers.forEach(d => { html += `<li>${d}</li>`; });
+                html += `</ul></div>`;
+            }
+
+            // LLM Assessment
+            if (trail.llm_biggest_risk || trail.llm_biggest_strength) {
+                html += `<div class="audit-section"><h4>🧠 LLM Assessment</h4>`;
+                if (trail.llm_biggest_strength) html += `<p>✅ <strong>Strength:</strong> ${trail.llm_biggest_strength}</p>`;
+                if (trail.llm_biggest_risk) html += `<p>⚠️ <strong>Risk:</strong> ${trail.llm_biggest_risk}</p>`;
+                html += `<p>Override Flag: <strong>${trail.llm_override_flag || 'MAINTAIN'}</strong></p></div>`;
+            }
+
+            // Decision Reason
+            if (trail.decision_reason) {
+                html += `<div class="audit-section"><h4>✅ Final Decision</h4><p style="font-size:1rem;font-weight:600;">${trail.decision_reason}</p></div>`;
+            }
+
+            // Timestamp
+            if (trail.timestamp) {
+                html += `<div class="audit-section" style="text-align:right;"><p style="font-size:.75rem;color:var(--text-secondary);">Generated: ${new Date(trail.timestamp).toLocaleString('en-IN')}</p></div>`;
+            }
+
+            content.innerHTML = html || '<p style="color:var(--text-secondary);">No audit trail data available.</p>';
+        })
+        .catch(err => {
+            content.innerHTML = `<p style="color:#ef4444;">Failed to load audit trail: ${err.message}</p>`;
+        });
+}
 
 
 // ═══════════════════════════════════════════════════════
@@ -2883,7 +3467,111 @@ async function loadGovernance() {
         console.error('Governance load error:', e);
         renderGovernancePlaceholder();
     }
+    // Also load accuracy analytics
+    loadAccuracyAnalytics();
 }
+
+
+// ─── Accuracy & System Analytics ─────────────────────────────────────────────
+async function loadAccuracyAnalytics() {
+    try {
+        const res = await fetch('/api/layer8/analytics');
+        if (!res.ok) throw new Error('Analytics API error ' + res.status);
+        const data = await res.json();
+
+        const s = data.summary || {};
+
+        // ── Populate counter cards ───────────────────────
+        const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        setEl('l8AgreementPct', s.avg_agreement_pct != null ? s.avg_agreement_pct + '%' : '—');
+        setEl('l8FillRate', s.avg_fill_rate_pct != null ? s.avg_fill_rate_pct + '%' : '—');
+        setEl('l8AvgTime', s.avg_processing_time_sec != null ? _formatTime(s.avg_processing_time_sec) : '—');
+        setEl('l8HoursSaved', s.human_hours_saved != null ? s.human_hours_saved + 'h' : '—');
+        setEl('l8TotalCases', s.total_cases != null ? s.total_cases : '—');
+
+        // ── Extraction Method Distribution ───────────────
+        const methodsEl = document.getElementById('l8ExtractionMethods');
+        if (methodsEl && data.extraction_methods) {
+            const methods = data.extraction_methods;
+            const total = Object.values(methods).reduce((a, b) => a + b, 0) || 1;
+            const colors = { LLM: '#10b981', OCR: '#f59e0b', Regex: '#6366f1', Unknown: '#6b7280' };
+            let methodHTML = '';
+            for (const [method, count] of Object.entries(methods)) {
+                if (count === 0) continue;
+                const pct = ((count / total) * 100).toFixed(1);
+                const color = colors[method] || '#6b7280';
+                methodHTML += `
+                    <div style="margin-bottom:8px;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                            <span style="color:var(--text-primary);">${method}</span>
+                            <span style="color:var(--text-secondary);">${count} (${pct}%)</span>
+                        </div>
+                        <div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                            <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width .5s;"></div>
+                        </div>
+                    </div>`;
+            }
+            methodsEl.innerHTML = methodHTML || '<p style="color:var(--text-secondary);">No data</p>';
+        }
+
+        // ── Per-Case Accuracy Table ──────────────────────
+        const tableEl = document.getElementById('l8PerCaseTable');
+        if (tableEl && data.per_case && data.per_case.length) {
+            let tableHTML = `<table style="width:100%;border-collapse:collapse;">
+                <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);">
+                    <th style="text-align:left;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Case</th>
+                    <th style="text-align:left;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Company</th>
+                    <th style="text-align:center;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Agreement</th>
+                    <th style="text-align:center;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Fill Rate</th>
+                    <th style="text-align:center;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Method</th>
+                    <th style="text-align:center;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Time</th>
+                    <th style="text-align:center;padding:6px 8px;color:var(--text-secondary);font-weight:600;">Decision</th>
+                </tr></thead><tbody>`;
+
+            for (const c of data.per_case.slice(0, 20)) {
+                const agreeColor = c.agreement_pct >= 95 ? '#10b981' : c.agreement_pct >= 85 ? '#f59e0b' : '#ef4444';
+                const fillColor = c.fill_rate >= 80 ? '#10b981' : c.fill_rate >= 60 ? '#f59e0b' : '#ef4444';
+                const decColor = c.decision === 'APPROVE' ? '#10b981' : c.decision === 'CONDITIONAL' ? '#f59e0b' : '#ef4444';
+                tableHTML += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                    <td style="padding:6px 8px;font-family:monospace;font-size:0.78rem;">${(c.case_id || '—').substring(0, 12)}</td>
+                    <td style="padding:6px 8px;">${c.company || '—'}</td>
+                    <td style="text-align:center;padding:6px 8px;font-weight:700;color:${agreeColor};">${c.agreement_pct}%</td>
+                    <td style="text-align:center;padding:6px 8px;font-weight:600;color:${fillColor};">${c.fill_rate}%</td>
+                    <td style="text-align:center;padding:6px 8px;">${c.extraction_method || '—'}</td>
+                    <td style="text-align:center;padding:6px 8px;">${_formatTime(c.processing_time_sec)}</td>
+                    <td style="text-align:center;padding:6px 8px;font-weight:600;color:${decColor};">${c.decision || '—'}</td>
+                </tr>`;
+            }
+            tableHTML += '</tbody></table>';
+            tableEl.innerHTML = tableHTML;
+        } else if (tableEl) {
+            tableEl.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:1rem;">No completed cases yet. Process an application to see accuracy data.</p>';
+        }
+
+        // ── Formula explanation from API ─────────────────
+        const formulaEl = document.getElementById('l8FormulaExplanation');
+        if (formulaEl && data.accuracy_formula) {
+            formulaEl.innerHTML = `
+                <p style="margin:0;"><strong>${data.accuracy_formula.name}:</strong> <code style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;font-size:0.82rem;">${data.accuracy_formula.formula}</code></p>
+                <p style="margin:6px 0 0;color:var(--text-secondary);font-size:0.8rem;">${data.accuracy_formula.description}</p>
+            `;
+        }
+
+    } catch (e) {
+        console.error('Accuracy analytics load error:', e);
+        const el = document.getElementById('l8PerCaseTable');
+        if (el) el.innerHTML = '<p style="color:#ef4444;padding:1rem;">Failed to load analytics: ' + e.message + '</p>';
+    }
+}
+
+function _formatTime(seconds) {
+    if (!seconds || seconds <= 0) return '—';
+    if (seconds < 60) return Math.round(seconds) + 's';
+    if (seconds < 3600) return Math.round(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's';
+    return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+}
+
+
 
 function ragBadge(status, text) {
     const map = {

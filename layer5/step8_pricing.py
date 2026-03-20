@@ -22,6 +22,7 @@ def compute_pricing(
     uncertainty_level: str,
     pricing_buffer_bps: int,
     conditions: list,
+    green_eligible: bool = False,
 ) -> Dict[str, Any]:
     """Compute final interest rate from score band + buffers + conditions."""
     # Find band rate
@@ -37,11 +38,20 @@ def compute_pricing(
     unc_buffer = pricing_buffer_bps / 100   # bps → percentage
     cond_penalty = min(len(conditions) * 0.50, 1.50)   # +0.50% per HC, max 1.50%
 
-    final_rate = round(band_rate + unc_buffer + cond_penalty, 2)
+    # Green Loan discount (RBI Sustainable Finance Framework)
+    green_discount = 0.0
+    if green_eligible and final_score >= 650:
+        green_discount = 0.50   # 50 bps for strong ESG scores
+    elif green_eligible:
+        green_discount = 0.25   # 25 bps standard green discount
+
+    final_rate = round(band_rate + unc_buffer + cond_penalty - green_discount, 2)
     processing_fee = 1.00   # 1% standard
 
     print(f"  Step 8 Pricing: Base {BASE_RATE}% + Spread {band_spread}% + "
-          f"Unc {unc_buffer}% + Cond {cond_penalty}% = {final_rate}%")
+          f"Unc {unc_buffer}% + Cond {cond_penalty}%"
+          f"{' - Green ' + str(green_discount) + '%' if green_discount else ''}"
+          f" = {final_rate}%")
 
     return {
         "base_rate": BASE_RATE,
@@ -49,8 +59,11 @@ def compute_pricing(
         "band_rate": band_rate,
         "uncertainty_buffer_pct": unc_buffer,
         "conditional_penalty_pct": cond_penalty,
+        "green_discount_pct": green_discount,
+        "green_eligible": green_eligible,
         "final_interest_rate": final_rate,
         "rate_type": "Floating (linked to RBI repo rate, reset quarterly)",
         "processing_fee_pct": processing_fee,
         "band_label": band_label,
     }
+
