@@ -282,6 +282,18 @@ Intelli-Credit/
 | Human bias          | Explainable AI     |
 | Scattered documents | Unified CAM        |
 
+---
+
+## 📅 Recent Updates / Changelog
+
+**v1.5 - Multi-Provider Resilience & Governance Dashboards**
+* **feat(llm)**: Implemented highly resilient 15-key rotation strategy (`utils_keys.py`) — distributed dynamically across Core AI agents, Content Generation, and Chatbot to prevent starvation.
+* **feat(extractor)**: Engineered smart multi-provider fallback mechanism (Groq -> Nvidia NIM -> Manual Modal) that seamlessly handles TPM wait limits.
+* **feat(chat)**: Implemented dedicated streaming context-aware Chatbot with markdown-rendered UI.
+* **feat(ui)**: Integrated Chart.js visualizations into Layer 8 Governance dashboard (PSI Drift, Decision Patterns, and SMA/NPA portfolio health).
+* **feat(cam)**: Mapped requested loan amount direct to Section 4 and implemented dynamic FY column headers based on extracted metadata.
+* **fix(pipeline)**: Restructured extraction processing to support pausing and resuming extraction upon rate limits without partial JSON generation errors.
+* **fix(hitl)**: Resolved `TypeError` in L7 CAM generator and L6 recalculation crashes containing dictionary-wrapped outputs.
 
 ---
 
