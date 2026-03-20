@@ -20,9 +20,25 @@ from docx.enum.section import WD_ORIENT
 def _safe(val, default='—'):
     if val is None or val == '' or val == []:
         return default
-    if isinstance(val, dict) and 'value' in val:
-        return val['value'] if val['value'] is not None else default
+    if isinstance(val, dict):
+        if 'value' in val and val['value'] is not None:
+            return val['value']
+        # If there's only one key and it's not 'source' or 'page' or something, try mapping it
+        for k in ['amount', 'total', 'net_worth', 'profit']:
+            if k in val and val[k] is not None:
+                return val[k]
+        # Fallback if no clear value found and it's a dict
+        return default
     return val
+
+def _safe_float(val, default=0.0):
+    s = _safe(val, default=default)
+    try:
+        if isinstance(s, str):
+            s = s.replace(",", "").replace("₹", "").strip()
+        return float(s)
+    except (ValueError, TypeError):
+        return default
 
 def _fmt_inr(val):
     try:
@@ -379,9 +395,9 @@ class CAMGenerator:
 
         # Drawing Power calculation (RBI requirement for CC)
         _add_heading(self.doc, 'Drawing Power Calculation (for CC/OD)', level=2)
-        stock = float(_safe(self.extracted.get('inventory', 0), 0))
-        debtors = float(_safe(self.extracted.get('trade_receivables', 0), 0))
-        creditors = float(_safe(self.extracted.get('trade_payables', 0), 0))
+        stock = _safe_float(self.extracted.get('inventory', 0))
+        debtors = _safe_float(self.extracted.get('trade_receivables', 0))
+        creditors = _safe_float(self.extracted.get('trade_payables', 0))
         dp = 0.75 * stock + 0.80 * debtors - creditors
         dp_table = self.doc.add_table(rows=0, cols=2)
         dp_table.style = 'Table Grid'

@@ -5,6 +5,21 @@ Three-pathway limit + Nayak Committee MPBF (Method II).
 import math
 from typing import Dict, Any
 
+def _get_float(d: Dict[str, Any], *keys, default=0.0) -> float:
+    for k in keys:
+        val = d.get(k)
+        if val is not None and val != "":
+            if isinstance(val, dict):
+                # Try common keys that might hold the value
+                val = val.get("value", val.get("amount", val.get(k, val)))
+            try:
+                if isinstance(val, str):
+                    val = val.replace(",", "").replace("₹", "").strip()
+                return float(val)
+            except (ValueError, TypeError, AttributeError):
+                pass
+    return float(default)
+
 
 def compute_loan_structure(
     features: Dict[str, float],
@@ -26,21 +41,21 @@ def compute_loan_structure(
 
     # Extract balance sheet items from Layer 2
     l2 = layer2_data or {}
-    monthly_credits = float(l2.get("avg_monthly_credits", 0) or l2.get("monthly_credits_avg", 22.0) or 22.0)
-    emi_ratio = float(l2.get("emi_obligation_ratio", 0.30) or 0.30)
+    monthly_credits = _get_float(l2, "avg_monthly_credits", "monthly_credits_avg", default=22.0)
+    emi_ratio = _get_float(l2, "emi_obligation_ratio", default=0.30)
 
     # Net worth from L2 (rough: current_ratio × estimated current liabilities)
-    net_worth = float(l2.get("net_worth", 0) or l2.get("tangible_net_worth", 0) or 89.45)
+    net_worth = _get_float(l2, "net_worth", "tangible_net_worth", default=89.45)
 
     # Balance sheet components for MPBF
-    inventory = float(l2.get("inventory", 0) or l2.get("closing_stock", 0) or 0)
-    debtors = float(l2.get("sundry_debtors", 0) or l2.get("trade_receivables", 0) or 0)
-    advances = float(l2.get("advances", 0) or l2.get("loans_and_advances", 0) or 0)
-    cash = float(l2.get("cash_and_bank", 0) or l2.get("cash_balance", 0) or 0)
-    creditors = float(l2.get("sundry_creditors", 0) or l2.get("trade_payables", 0) or 0)
-    provisions = float(l2.get("provisions", 0) or 0)
-    other_cl = float(l2.get("other_current_liabilities", 0) or 0)
-    bank_borrowings = float(l2.get("bank_borrowings", 0) or l2.get("cc_od_limit", 0) or 0)
+    inventory = _get_float(l2, "inventory", "closing_stock", default=0.0)
+    debtors = _get_float(l2, "sundry_debtors", "trade_receivables", default=0.0)
+    advances = _get_float(l2, "advances", "loans_and_advances", default=0.0)
+    cash = _get_float(l2, "cash_and_bank", "cash_balance", default=0.0)
+    creditors = _get_float(l2, "sundry_creditors", "trade_payables", default=0.0)
+    provisions = _get_float(l2, "provisions", default=0.0)
+    other_cl = _get_float(l2, "other_current_liabilities", default=0.0)
+    bank_borrowings = _get_float(l2, "bank_borrowings", "cc_od_limit", default=0.0)
 
     tenure_months = 48
     rate_monthly = final_rate / 100 / 12

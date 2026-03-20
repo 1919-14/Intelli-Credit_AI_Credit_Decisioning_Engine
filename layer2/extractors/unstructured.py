@@ -399,7 +399,6 @@ JSON TEMPLATE TO FILL:
                         wait_secs = max(e.seconds_until_reset + 5, 30)
                         groq_tpm_waits += 1
                         print(f"  ⏳ [GROQ] All keys exhausted on chunk {idx+1} — waiting {wait_secs}s for TPM reset (attempt {groq_tpm_waits}/{MAX_GROQ_WAITS})...")
-                        import time
                         time.sleep(wait_secs)
                         # Loop back and retry Groq
                         continue
@@ -419,7 +418,6 @@ JSON TEMPLATE TO FILL:
                     if groq_tpm_waits < MAX_GROQ_WAITS:
                         groq_tpm_waits += 1
                         print(f"  ⚠ [GROQ] Error on chunk {idx+1}: {ge} — waiting 30s before retry ({groq_tpm_waits}/{MAX_GROQ_WAITS})...")
-                        import time
                         time.sleep(30)
                         continue
                     else:

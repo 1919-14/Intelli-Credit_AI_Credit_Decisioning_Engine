@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import copy
 import threading
@@ -226,7 +227,6 @@ class IntelliCreditPipeline:
                         print(f"  ⏸  All keys exhausted ({e.exhaustion_type.upper()}) during chunked extraction")
                         decision = self._wait_for_human_decision(case_id, str(app_id), e)
                         if decision == 'wait' and e.exhaustion_type == 'tpm':
-                            import time
                             wait_secs = e.seconds_until_reset + 3
                             print(f"  ⏳ Waiting {wait_secs}s for TPM window to reset...")
                             self._emit_progress(case_id, 'rate_limit_waiting', {
@@ -269,7 +269,6 @@ class IntelliCreditPipeline:
                         print(f"  ⏸  All keys exhausted ({e.exhaustion_type.upper()})")
                         decision = self._wait_for_human_decision(case_id, str(app_id), e)
                         if decision == 'wait' and e.exhaustion_type == 'tpm':
-                            import time
                             wait_secs = e.seconds_until_reset + 3
                             print(f"  ⏳ Waiting {wait_secs}s for TPM window to reset...")
                             self._emit_progress(case_id, 'rate_limit_waiting', {
