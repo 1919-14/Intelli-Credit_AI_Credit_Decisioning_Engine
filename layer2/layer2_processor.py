@@ -154,6 +154,8 @@ class IntelliCreditPipeline:
         while file_idx < total_files:
             fp = filepaths[file_idx]
             meta = self.dispatcher.ingest(fp)
+            fp = meta.get("filepath", fp) # Use newly converted filepath if applicable
+            
             target_key = meta["target_key"]
             doc_label = DOC_TYPE_LABELS.get(target_key, "Financial Document")
             page_count = meta["pages"]

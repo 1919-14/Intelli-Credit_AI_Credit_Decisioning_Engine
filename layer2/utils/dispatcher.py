@@ -70,6 +70,38 @@ class DocumentDispatcher:
         return "SRC_UNKNOWN" # Requires human-in-the-loop mapping
 
     @classmethod
+    def _convert_to_pdf(cls, filepath: str, ext: str) -> str:
+        """
+        Converts Excel/CSV to PDF and returns the new filepath.
+        """
+        import pandas as pd
+        from reportlab.platypus import SimpleDocTemplate, Paragraph
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet
+        
+        if ext == '.csv':
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+            
+        text_data = df.to_csv(index=False)
+        new_filepath = os.path.splitext(filepath)[0] + ".pdf"
+        
+        doc = SimpleDocTemplate(new_filepath, pagesize=letter)
+        styles = getSampleStyleSheet()
+        style = styles["Normal"]
+        style.fontName = "Courier"
+        
+        story = []
+        for line in text_data.split('\n'):
+            if line.strip():
+                safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                story.append(Paragraph(safe_line, style))
+                
+        doc.build(story)
+        return new_filepath
+
+    @classmethod
     def ingest(cls, filepath: str) -> Dict[str, Any]:
         """
         Main entry point. Normalizes the input file and determines routing.
@@ -80,6 +112,15 @@ class DocumentDispatcher:
         if ext not in cls.SUPPORTED_EXTENSIONS:
             raise ValueError(f"Unsupported file format: {ext}")
             
+        # Convert Excel/CSV to PDF immediately before processing
+        if ext in ['.xlsx', '.xls', '.csv']:
+            try:
+                filepath = cls._convert_to_pdf(filepath, ext)
+                filename = os.path.basename(filepath)
+                ext = '.pdf'
+            except Exception as e:
+                print(f"Warning: Failed to convert {filename} to PDF: {e}")
+                
         file_hash = cls.get_file_hash(filepath)
         
         meta = {
@@ -101,3 +142,4 @@ class DocumentDispatcher:
         meta["target_key"] = cls.classify_document(filename, first_page_text)
         
         return meta
+
